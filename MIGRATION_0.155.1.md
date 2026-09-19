@@ -85,12 +85,21 @@ macOS で実行方法・初回起動の影響を受けた。製品の待ち時�
 検証を試みたが、`codex-voice-host` が要求する `pkg-config` / GStreamer 開発環境が
 この Mac にないため、`glib-sys` のビルドで停止した。これは upstream の私的な音声ヘルパーの
 基盤であり、通常の CLI にはまだ接続されていない（`voice-host/README.md`）。
-このパッケージを追加で除いた確認と導入確認の結果は後段に追記する。
+このパッケージを追加で除いた確認では **6,005 件中 5,997 件通過、7 件失敗、
+1 件時間切れ、11 件 skip**。上記の managed daemon 以外の内訳は次のとおり。
+
+| ケース | 確認結果 |
+| --- | --- |
+| skills-extension の 2 件 | 一時 CODEX_HOME だけでは実ホームの `~/.agents/skills` が分離されず、ユーザーの 13 個の skill が期待値に追加。期待する plugin の内容・優先順位は一致。対象ソースは公式版から未変更 |
+| Seatbelt の 2 件 | 書込み拒否・ファイル保持の検査は通過。stderr の `bash: line 1:` と期待値 `bash:` の文言差だけで失敗。対象ソースは公式版から未変更 |
+| OAuth HTTP client の 1 件 | 700 ms 制限のケースで mock に届いたリクエストが 0 件。既存バイナリからの直接実行でも再現。関連実装と外部依存版は公式版から未変更で、初期化の遅延箇所は未特定 |
+| V8 POC の 1 件 | workspace で V8 の sandbox feature が有効になる一方、POC 自身の feature は無効のためテスト内比較が不一致。公式版から未変更。CLI はこの POC に依存せず、code-mode-host 71 件・runtime 72 件は全件通過。使用した公式 V8 archive / bindings は sandbox 有効の構成に一致 |
+| absolute-path の 1 件 | 削除した cwd を使う子プロセス試験が 60 秒で時間切れ。対象ソースは公式版から未変更。停止箇所は未特定 |
 
 ローカルの詳細ログは `.git/migration-*.log` に保存している。
 ビルドキャッシュは既存の `/Volumes/CodexBuild20260912/target` を使用し、
 `CARGO_INCREMENTAL=0`、dev / test の debug 情報を無効にしてディスク消費を抑えた。
-今回のローカル導入用バイナリは dev profile で作成する。最適化した release profile での
+今回のローカル導入用バイナリは dev profile で作成した。最適化した release profile での
 再ビルド手順は README に記載している。
 
 ### データの保全
@@ -112,6 +121,32 @@ Cargo と CLI の公式版番号は `0.155.1` を保つ。リモート環境の�
 `current` symlink が選択中の版を指し、`~/.local/bin/convenient-codex` から起動する。
 `--set-default` で `~/.local/bin/codex` も作成できる。
 `codex --build-info` で導入した改造版を識別する。
+
+### 導入した版と最終確認
+
+**通常の `codex` コマンドを `0.155.1+convenient.1` に切替済み。**
+ビルド対象のソースコミットは `d4f67ee5b9502c22ce0bdcb49f053a6b5038147b`。
+未コミット変更のない状態で、この SHA を `STABLE_GIT_COMMIT` として指定し、
+CLI と code-mode-host の最終ビルドが 2 分 40 秒で成功した。
+この節を含む導入記録の追記は、その後の文書だけのコミットである。
+
+- パッケージ: `~/.local/share/convenient-codex/releases/0.155.1+convenient.1`
+- 選択先: `~/.local/share/convenient-codex/current`
+- 起動コマンド: `~/.local/bin/codex` / `~/.local/bin/convenient-codex`
+- 製品 metadata、ソース SHA、`source_dirty = false`、4 個の実行ファイルの SHA-256 と
+  macOS コード署名を検証。
+- bash / zsh の新規 login shell で `command -v codex` が上記ランチャーを指すことを確認。
+  zsh の非対話 login shell でも優先されるよう、`.zprofile` の Homebrew 初期化後に
+  `~/.local/bin` を PATH の先頭へ追加。変更前のファイルは DB と同じ backup ディレクトリの
+  `zprofile.before-path-change` に保存した。
+- `codex --version` は `codex-cli 0.155.1`、features は `env_switch`・`monitor`・`goals`
+  がすべて `true`。既存のログイン状態を維持。
+- 同梱 code-mode-host の起動、および一時 CODEX_HOME で導入済み app-server の
+  `initialize` 応答と正常終了を確認。
+- 導入時に公式 latest API を再確認し、最新安定版が引き続き `rust-v0.155.1` と一致。
+
+起動済みのセッションやデスクトップアプリの内蔵バイナリは、この PATH 切替では置き換わらない。
+新しく起動する CLI からこの版になる。旧 npm バイナリと旧作業ディレクトリは保持した。
 
 本移行の配布経路は Cargo ビルド。Bazel で作る開発用バイナリは upstream と同じく
 版が `0.0.0` になり、リモート準備時の `HostVersion` は最新公式版にフォールバックする。
