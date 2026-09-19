@@ -149,7 +149,7 @@ impl InputQueue {
         let mut pending = self.monitor_pending.lock().await;
         if pending.len() >= 32 {
             pending.pop_front();
-            item = crate::context::MonitorNotification::new(
+            item = crate::context::MonitorNotification::summary(
                 item.description,
                 format!(
                     "[older monitor notification dropped: queue full]\n{}",

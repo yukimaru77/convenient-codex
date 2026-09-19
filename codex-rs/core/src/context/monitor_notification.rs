@@ -10,6 +10,14 @@ pub(crate) struct MonitorNotification {
 
 impl MonitorNotification {
     pub(crate) fn new(description: impl Into<String>, body: impl Into<String>) -> Self {
+        Self::bounded(description.into(), body.into(), 700)
+    }
+
+    pub(crate) fn summary(description: impl Into<String>, body: impl Into<String>) -> Self {
+        Self::bounded(description.into(), body.into(), 8192)
+    }
+
+    fn bounded(description: String, body: String, body_limit: usize) -> Self {
         fn bounded(mut text: String, limit: usize) -> String {
             if text.len() > limit {
                 let mut end = limit - " [truncated]".len();
@@ -22,8 +30,8 @@ impl MonitorNotification {
             text
         }
         Self {
-            description: bounded(description.into(), 128),
-            body: bounded(body.into(), 700),
+            description: bounded(description, 128),
+            body: bounded(body, body_limit),
         }
     }
 }

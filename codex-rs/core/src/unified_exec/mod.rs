@@ -63,6 +63,7 @@ pub(crate) fn set_deterministic_process_ids_for_tests(enabled: bool) {
 }
 
 pub(crate) use errors::UnifiedExecError;
+pub(crate) use monitor::MonitorDelivery;
 pub(crate) use monitor::MonitorManager;
 pub(crate) use monitor::spawn_delivery;
 pub(crate) use process::NoopSpawnLifecycle;

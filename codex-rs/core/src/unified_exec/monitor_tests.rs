@@ -1,6 +1,65 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
+#[test]
+fn summary_keeps_head_tail_and_resets_without_losing_partial_line() {
+    let mut buffer = SummaryBuffer::default();
+    for i in 0..30 {
+        buffer.extend(format!("line {i}\n").as_bytes());
+    }
+    buffer.extend(b"next");
+    let mut expected = (0..3).map(|i| format!("line {i}")).collect::<Vec<_>>();
+    expected.push("... (7 lines omitted) ...".into());
+    expected.extend((10..30).map(|i| format!("line {i}")));
+    assert_eq!(buffer.take_summary(), Some(expected.join("\n")));
+    assert_eq!(buffer.take_summary(), None);
+    buffer.extend(b" line\n");
+    assert_eq!(buffer.take_summary(), Some("next line".into()));
+}
+
+#[test]
+fn summary_preserves_short_batches_without_overlap() {
+    for count in [1, 3, 4, 20, 23] {
+        let text = (0..count)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut buffer = SummaryBuffer::default();
+        buffer.extend(format!("{text}\n").as_bytes());
+        assert_eq!(buffer.take_summary(), Some(text));
+    }
+}
+
+#[test]
+fn summary_bounds_long_lines_and_large_stream_without_losing_tail() {
+    let mut buffer = SummaryBuffer::default();
+    for _ in 0..6000 {
+        buffer.extend("あ".repeat(1000).as_bytes());
+        buffer.extend(b"\n");
+    }
+    buffer.extend(b"last line without newline");
+    buffer.finish_line();
+    let text = buffer.take_summary().unwrap();
+    assert!(text.contains("... (5978 lines omitted) ..."));
+    assert!(text.ends_with("last line without newline"));
+    assert!(text.len() < 8192);
+    assert_eq!(MonitorNotification::summary("label", &text).body, text);
+}
+
+#[test]
+fn summary_invalid_utf8_cannot_expand_past_notification_limit() {
+    let mut buffer = SummaryBuffer::default();
+    for _ in 0..30 {
+        buffer.extend(&[255; 256]);
+        buffer.extend(b"\n");
+    }
+    buffer.extend(b"tail marker\n");
+    let text = buffer.take_summary().unwrap();
+    assert!(text.len() < 8192);
+    assert!(text.ends_with("tail marker"));
+    assert_eq!(MonitorNotification::summary("label", &text).body, text);
+}
+
 #[tokio::test]
 async fn monitor_context_is_bounded_and_overflow_is_visible() {
     use crate::context::ContextualUserFragment;
@@ -37,6 +96,9 @@ async fn registry_tracks_insert_list_and_remove() {
             1,
             "watch a".to_string(),
             "cmd a".to_string(),
+            MonitorDelivery::Summary {
+                interval: Duration::from_secs(3600),
+            },
             tokio::spawn(async {}),
         )
         .await;
@@ -46,6 +108,7 @@ async fn registry_tracks_insert_list_and_remove() {
             2,
             "watch b".to_string(),
             "cmd b".to_string(),
+            MonitorDelivery::Realtime,
             tokio::spawn(async {}),
         )
         .await;
@@ -60,6 +123,7 @@ async fn registry_tracks_insert_list_and_remove() {
     let remaining = manager.list().await;
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].id, "mon_b");
+    assert!(matches!(remaining[0].delivery, MonitorDelivery::Realtime));
 
     manager.abort_all().await;
     assert!(manager.list().await.is_empty());
@@ -77,6 +141,7 @@ async fn deregister_self_removes_entry_without_aborting_its_task() {
             7,
             "watch".to_string(),
             "cmd".to_string(),
+            MonitorDelivery::Realtime,
             task,
         )
         .await;

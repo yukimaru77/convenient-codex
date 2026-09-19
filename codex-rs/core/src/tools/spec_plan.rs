@@ -1226,7 +1226,8 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, registry: &mut Tool
     }
 
     if features.enabled(Feature::Monitor) && features.enabled(Feature::ShellTool) {
-        registry.add(MonitorHandler);
+        registry.add(MonitorHandler::Summary);
+        registry.add(MonitorHandler::Realtime);
     }
 
     if tool_suggest_enabled(turn_context)

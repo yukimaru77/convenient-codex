@@ -4265,6 +4265,7 @@
     "ThreadGoalStatus": {
       "enum": [
         "active",
+        "goalWait",
         "paused",
         "blocked",
         "usageLimited",

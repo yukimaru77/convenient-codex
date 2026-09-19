@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
@@ -11,6 +12,7 @@ use crate::tools::handlers::resolve_tool_environment;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 use crate::unified_exec::ExecCommandRequest;
+use crate::unified_exec::MonitorDelivery;
 use crate::unified_exec::UnifiedExecContext;
 use crate::unified_exec::spawn_delivery;
 use codex_tools::JsonSchema;
@@ -30,7 +32,11 @@ const MONITOR_TOOL_NAME: &str = "monitor";
 /// tool call returns quickly while the watcher keeps running in the background.
 const MONITOR_YIELD_MS: u64 = 250;
 
-pub struct MonitorHandler;
+#[derive(Clone, Copy)]
+pub enum MonitorHandler {
+    Summary,
+    Realtime,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -50,10 +56,12 @@ struct MonitorArgs {
     description: Option<String>,
     #[serde(default)]
     id: Option<String>,
+    #[serde(default)]
+    interval_minutes: Option<f64>,
 }
 
-fn create_monitor_tool() -> ToolSpec {
-    let properties = BTreeMap::from([
+fn create_monitor_tool(kind: MonitorHandler) -> ToolSpec {
+    let mut properties = BTreeMap::from([
         (
             "action".to_string(),
             JsonSchema::string_enum(
@@ -64,7 +72,7 @@ fn create_monitor_tool() -> ToolSpec {
         (
             "command".to_string(),
             JsonSchema::string(Some(
-                "Shell command to run as the watcher (action=start). Each line it prints (stdout or stderr) becomes one notification, so filter to the lines you care about (e.g. `tail -F app.log | grep --line-buffered ERROR`).".to_string(),
+                "Shell command to run as the watcher (action=start). Captures stdout and stderr.".to_string(),
             )),
         ),
         (
@@ -81,10 +89,23 @@ fn create_monitor_tool() -> ToolSpec {
         ),
     ]);
 
+    let (name, description) = match kind {
+        MonitorHandler::Summary => {
+            properties.insert("interval_minutes".to_string(), JsonSchema::number(Some("Positive notification interval in minutes (action=start), default 60. Fractional minutes are allowed.".to_string())));
+            (
+                MONITOR_TOOL_NAME,
+                "Run a shell command as a background watcher. Every interval_minutes (default 60 minutes), send only the first 3 and last 20 lines of output accumulated since the previous notification, with an omission marker for skipped middle lines. Short batches are sent once without overlap; empty intervals are silent. Also send remaining output and exit status when the command exits. Long lines are truncated to 256 bytes. Prefer this tool for build, training, job, and log monitoring. action=start returns an id; action=stop stops a watcher; action=list lists watchers shared with monitor_realtime.",
+            )
+        }
+        MonitorHandler::Realtime => (
+            "monitor_realtime",
+            "Discouraged for routine monitoring: frequent notifications consume many tokens and clutter the context. Use monitor instead unless immediate synchronization is essential, such as responding to a live incident or coordinating an interactive process. Runs a background shell command and forwards stdout/stderr lines, batching lines arriving within 200 ms. Also reports command exit. action=start returns an id; action=stop stops a watcher; action=list lists watchers shared with monitor. Output is bounded and a flood of 5000 lines automatically stops the watcher.",
+        ),
+    };
+
     ToolSpec::Function(ResponsesApiTool {
-        name: MONITOR_TOOL_NAME.to_string(),
-        description: "Run a shell command as a long-lived background watcher. Each line the command prints (stdout or stderr) is delivered to you as a notification, prefixed with the label; lines emitted close together are batched. The watch ends when the command exits. Use it to react to events without polling: `fswatch <path>` or `inotifywait -m <path>` for file changes, `tail -F <log> | grep --line-buffered <pattern>` for log signals, or a poll loop for remote state. action=start begins a watch and returns its id; action=stop ends the watch with that id; action=list shows active watches."
-            .to_string(),
+        name: name.to_string(),
+        description: description.to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::object(
@@ -98,18 +119,21 @@ fn create_monitor_tool() -> ToolSpec {
 
 impl ToolExecutor<ToolInvocation> for MonitorHandler {
     fn tool_name(&self) -> ToolName {
-        ToolName::plain(MONITOR_TOOL_NAME)
+        ToolName::plain(match self {
+            Self::Summary => MONITOR_TOOL_NAME,
+            Self::Realtime => "monitor_realtime",
+        })
     }
 
     fn spec(&self) -> ToolSpec {
-        create_monitor_tool()
+        create_monitor_tool(*self)
     }
 
     fn handle<'a>(&'a self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'a>
     where
         ToolInvocation: 'a,
     {
-        Box::pin(handle_call(invocation))
+        Box::pin(handle_call(invocation, *self))
     }
 }
 
@@ -155,6 +179,7 @@ impl CoreToolRuntime for MonitorHandler {
 
 async fn handle_call(
     invocation: ToolInvocation,
+    kind: MonitorHandler,
 ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
     let ToolInvocation {
         session,
@@ -171,6 +196,30 @@ async fn handle_call(
         )));
     };
     let args: MonitorArgs = parse_arguments(&arguments)?;
+    let delivery = match kind {
+        MonitorHandler::Summary => {
+            let minutes = args.interval_minutes.unwrap_or(60.0);
+            let interval = Duration::try_from_secs_f64(minutes * 60.0)
+                .ok()
+                .filter(|duration| !duration.is_zero())
+                .filter(|duration| tokio::time::Instant::now().checked_add(*duration).is_some())
+                .ok_or_else(|| {
+                    FunctionCallError::RespondToModel(
+                        "interval_minutes must be positive and within the supported timer range"
+                            .into(),
+                    )
+                })?;
+            MonitorDelivery::Summary { interval }
+        }
+        MonitorHandler::Realtime => {
+            if args.interval_minutes.is_some() {
+                return Err(FunctionCallError::RespondToModel(
+                    "interval_minutes is only supported by monitor".into(),
+                ));
+            }
+            MonitorDelivery::Realtime
+        }
+    };
 
     match args.action {
         MonitorAction::Start => {
@@ -180,8 +229,8 @@ async fn handle_call(
                 step_context,
                 cancellation_token,
                 call_id,
-                args.command,
-                args.description,
+                args,
+                delivery,
             )
             .await
         }
@@ -233,13 +282,19 @@ async fn start(
     step_context: Arc<crate::session::step_context::StepContext>,
     cancellation_token: tokio_util::sync::CancellationToken,
     call_id: String,
-    command: Option<String>,
-    description: Option<String>,
+    args: MonitorArgs,
+    delivery: MonitorDelivery,
 ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
-    let command = command.filter(|c| !c.trim().is_empty()).ok_or_else(|| {
-        FunctionCallError::RespondToModel("action=start requires a non-empty `command`".to_string())
-    })?;
-    let description = description
+    let command = args
+        .command
+        .filter(|c| !c.trim().is_empty())
+        .ok_or_else(|| {
+            FunctionCallError::RespondToModel(
+                "action=start requires a non-empty `command`".to_string(),
+            )
+        })?;
+    let description = args
+        .description
         .filter(|d| !d.trim().is_empty())
         .ok_or_else(|| {
             FunctionCallError::RespondToModel(
@@ -340,21 +395,27 @@ async fn start(
     // same process buffer. Retain short-lived processes and register the task
     // before allowing delivery, including its final exit notification.
     let id = format!("mon_{}", uuid::Uuid::new_v4());
-    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-    let task = spawn_delivery(
+    let (task, ready_tx) = spawn_delivery(
         process,
         process_id,
         id.clone(),
         Arc::downgrade(session),
         description.clone(),
         initial_output.raw_output,
-        ready_rx,
+        delivery,
     );
 
     session
         .services
         .monitor_manager
-        .insert(id.clone(), process_id, description.clone(), command, task)
+        .insert(
+            id.clone(),
+            process_id,
+            description.clone(),
+            command,
+            delivery,
+            task,
+        )
         .await;
     let _ = ready_tx.send(());
     Ok(text_output(format!(

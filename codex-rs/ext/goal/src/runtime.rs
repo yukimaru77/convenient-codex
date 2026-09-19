@@ -18,11 +18,14 @@ use crate::analytics::GoalAnalytics;
 use crate::analytics::GoalEventAttribution;
 use crate::events::GoalEventEmitter;
 use crate::metrics::GoalMetrics;
+use crate::steering::GoalContinuationReason;
 use crate::steering::continuation_steering_item;
 use crate::steering::objective_updated_steering_item;
 use crate::tool::protocol_goal_from_state;
 use tokio::sync::Semaphore;
 use tokio::sync::SemaphorePermit;
+
+mod waiting;
 
 #[derive(Clone)]
 pub struct GoalRuntimeHandle {
@@ -52,6 +55,7 @@ struct GoalRuntimeInner {
     accounting_state: Arc<GoalAccountingState>,
     root_accounting_state: Option<Arc<GoalAccountingState>>,
     enabled: AtomicBool,
+    wait_without_monitor: AtomicBool,
     tools_available_for_thread: bool,
     goal_state_lock: Semaphore,
 }
@@ -105,6 +109,7 @@ impl GoalRuntimeHandle {
                 accounting_state,
                 root_accounting_state: config.root_accounting_state,
                 enabled: AtomicBool::new(config.enabled),
+                wait_without_monitor: AtomicBool::new(false),
                 tools_available_for_thread: config.tools_available_for_thread,
                 goal_state_lock: Semaphore::new(/*permits*/ 1),
             }),
@@ -187,6 +192,10 @@ impl GoalRuntimeHandle {
             return Ok(());
         }
 
+        self.inner
+            .wait_without_monitor
+            .store(false, Ordering::Relaxed);
+
         let replaced_existing_goal = previous_goal
             .as_ref()
             .is_some_and(|previous_goal| previous_goal.goal_id != goal.goal_id);
@@ -235,6 +244,7 @@ impl GoalRuntimeHandle {
                 }
             }
             codex_state::ThreadGoalStatus::Paused
+            | codex_state::ThreadGoalStatus::GoalWait
             | codex_state::ThreadGoalStatus::Blocked
             | codex_state::ThreadGoalStatus::UsageLimited
             | codex_state::ThreadGoalStatus::Complete => {
@@ -251,6 +261,10 @@ impl GoalRuntimeHandle {
         if !self.is_enabled() {
             return Ok(());
         }
+
+        self.inner
+            .wait_without_monitor
+            .store(false, Ordering::Relaxed);
 
         self.inner.analytics.cleared(&goal);
         self.inner.accounting_state.clear_active_goal();
@@ -448,6 +462,11 @@ impl GoalRuntimeHandle {
         let item = continuation_steering_item(
             &protocol_goal_from_state(goal),
             thread.config().await.update_plan_enabled,
+            if self.inner.wait_without_monitor.load(Ordering::Relaxed) {
+                GoalContinuationReason::MissingMonitor
+            } else {
+                GoalContinuationReason::Regular
+            },
         );
 
         match thread
@@ -459,7 +478,11 @@ impl GoalRuntimeHandle {
             )
             .await
         {
-            Ok(StartIfIdleSubmission::Started { .. }) => {}
+            Ok(StartIfIdleSubmission::Started { .. }) => {
+                self.inner
+                    .wait_without_monitor
+                    .store(false, Ordering::Relaxed);
+            }
             Ok(StartIfIdleSubmission::NotSubmitted { reason }) => {
                 tracing::debug!(
                     ?reason,

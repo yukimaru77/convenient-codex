@@ -371,6 +371,7 @@ fn should_confirm_before_replacing_goal(goal: &ThreadGoal) -> bool {
     match goal.status {
         ThreadGoalStatus::Complete => false,
         ThreadGoalStatus::Active
+        | ThreadGoalStatus::GoalWait
         | ThreadGoalStatus::Paused
         | ThreadGoalStatus::Blocked
         | ThreadGoalStatus::UsageLimited

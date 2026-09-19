@@ -20829,6 +20829,7 @@
       "ThreadGoalStatus": {
         "enum": [
           "active",
+          "goalWait",
           "paused",
           "blocked",
           "usageLimited",
@@ -22092,6 +22093,29 @@
           "thread"
         ],
         "title": "ThreadMetadataUpdateResponse",
+        "type": "object"
+      },
+      "ThreadMonitor": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "intervalMinutes": {
+            "description": "Summary interval in minutes; null identifies monitor_realtime.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "description",
+          "id"
+        ],
         "type": "object"
       },
       "ThreadNameUpdatedNotification": {

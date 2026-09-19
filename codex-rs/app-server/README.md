@@ -1344,6 +1344,8 @@ Use `thread/backgroundTerminals/clean` to terminate all running background termi
 
 ### Example: List and terminate background terminals
 
+The response also includes `monitors`, a complete live-session snapshot independent of terminal pagination. Each monitor has `id`, `description`, and `intervalMinutes`: a number for periodic summaries, or `null` for realtime delivery. Stopped and exited monitors are excluded; monitor state is not restored from conversation history.
+
 Use `thread/backgroundTerminals/list` to inspect running background terminals associated with a loaded thread. The `backgroundTerminals` segment intentionally follows the existing `thread/backgroundTerminals/clean` method. The returned `processId` is the app-server process id; host OS metadata is nullable. The request accepts the standard `cursor` and `limit` pagination fields. When `nextCursor` is non-null, pass it as `cursor` to fetch the next page.
 
 ```json
@@ -1358,7 +1360,7 @@ Use `thread/backgroundTerminals/list` to inspect running background terminals as
         "cpuPercent": null,
         "rssKb": null
     }
-], "nextCursor": null } }
+], "monitors": [], "nextCursor": null } }
 ```
 
 Use `thread/backgroundTerminals/terminate` to terminate one running background terminal by that `processId`.

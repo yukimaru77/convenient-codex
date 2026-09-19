@@ -32,7 +32,11 @@ fn enabled_checklist_preserves_the_original_continuation_prompt() {
         original,
     ));
     assert_eq!(
-        steering::continuation_steering_item(&goal, /*update_plan_enabled*/ true),
+        steering::continuation_steering_item(
+            &goal,
+            /*update_plan_enabled*/ true,
+            steering::GoalContinuationReason::Regular
+        ),
         expected,
     );
 }
@@ -43,6 +47,7 @@ fn disabled_checklist_preserves_goal_text_that_mentions_the_tool() {
     let item = steering::continuation_steering_item(
         &test_goal(objective),
         /*update_plan_enabled*/ false,
+        steering::GoalContinuationReason::Regular,
     );
     let ResponseItem::Message { content, .. } = item else {
         panic!("expected goal continuation message");
@@ -52,7 +57,7 @@ fn disabled_checklist_preserves_goal_text_that_mentions_the_tool() {
     };
     assert!(text.contains(objective));
     assert!(!text.contains("If update_plan is available"));
-    assert!(text.contains("Completion audit:"));
+    assert!(text.contains("## Judging progress and completion"));
 }
 
 fn test_goal(objective: &str) -> ThreadGoal {

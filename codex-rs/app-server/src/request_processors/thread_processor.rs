@@ -2403,7 +2403,21 @@ impl ThreadRequestProcessor {
 
         let (data, next_cursor) = paginate_background_terminals(&terminals, cursor, limit)?;
 
-        Ok(ThreadBackgroundTerminalsListResponse { data, next_cursor })
+        let monitors = thread
+            .list_monitors()
+            .await
+            .into_iter()
+            .map(|monitor| codex_app_server_protocol::ThreadMonitor {
+                id: monitor.id,
+                description: monitor.description,
+                interval_minutes: monitor.interval_minutes,
+            })
+            .collect();
+        Ok(ThreadBackgroundTerminalsListResponse {
+            data,
+            monitors,
+            next_cursor,
+        })
     }
 
     async fn thread_background_terminals_terminate_inner(

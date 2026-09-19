@@ -3998,6 +3998,7 @@ impl<'de> Deserialize<'de> for SessionConfiguredEvent {
 #[ts(export_to = "protocol/")]
 pub enum ThreadGoalStatus {
     Active,
+    GoalWait,
     Paused,
     Blocked,
     UsageLimited,

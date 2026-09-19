@@ -33,6 +33,7 @@ pub(crate) fn format_goal_elapsed_seconds(seconds: i64) -> String {
 pub(crate) fn goal_status_label(status: ThreadGoalStatus) -> &'static str {
     match status {
         ThreadGoalStatus::Active => "active",
+        ThreadGoalStatus::GoalWait => "waiting for a new turn",
         ThreadGoalStatus::Paused => "paused",
         ThreadGoalStatus::Blocked => "stalled",
         ThreadGoalStatus::UsageLimited => "usage limited",

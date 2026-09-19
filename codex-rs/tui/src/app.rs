@@ -208,6 +208,7 @@ mod agent_status_feed;
 mod agents_overview;
 mod agents_overview_threads;
 mod agents_overview_view;
+mod monitor_status;
 pub(crate) use agents_overview::AGENTS_OVERVIEW_VIEW_ID;
 mod app_server_event_targets;
 mod app_server_events;

@@ -550,6 +550,7 @@ fn should_clear_active_goal(
             BudgetLimitedGoalDisposition::ClearActive
         ),
         ThreadGoalStatus::Paused
+        | ThreadGoalStatus::GoalWait
         | ThreadGoalStatus::Blocked
         | ThreadGoalStatus::UsageLimited
         | ThreadGoalStatus::Complete => true,

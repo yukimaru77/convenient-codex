@@ -1,12 +1,13 @@
 //! Command-monitor registry and output delivery.
 //!
 //! A monitor runs a shell command as a long-lived background process and
-//! delivers each output line (stdout or stderr) to the session as a
-//! notification, waking an idle session at the next turn boundary. It lives
+//! delivers periodic head/tail summaries, or opt-in realtime output, as
+//! notifications, waking an idle session at the next turn boundary. It lives
 //! inside `unified_exec` so the delivery loop can read the process's
 //! `pub(super)` output stream.
 
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Weak;
 use std::time::Duration;
@@ -37,16 +38,90 @@ const FLOOD_MAX_LINES: usize = 5000;
 const MAX_LINE_BYTES: usize = 700;
 const MAX_BATCH_BYTES: usize = 2400;
 
+#[derive(Clone, Copy)]
+pub(crate) enum MonitorDelivery {
+    Summary { interval: Duration },
+    Realtime,
+}
+
+/// Keep only the requested head and tail, not an hour of unbounded output.
+#[derive(Default)]
+struct SummaryBuffer {
+    head: Vec<String>,
+    tail: VecDeque<String>,
+    count: usize,
+    partial: Vec<u8>,
+    truncated: bool,
+}
+
+impl SummaryBuffer {
+    fn extend(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            if byte == b'\n' {
+                self.finish_line();
+            } else if self.partial.len() < 256 {
+                self.partial.push(byte);
+            } else {
+                self.truncated = true;
+            }
+        }
+    }
+
+    fn finish_line(&mut self) {
+        let mut text = String::from_utf8_lossy(&self.partial)
+            .trim_end()
+            .to_string();
+        self.partial.clear();
+        if text.len() > 256 {
+            let mut end = 256;
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            text.truncate(end);
+            self.truncated = true;
+        }
+        if std::mem::take(&mut self.truncated) {
+            text.push_str(" [line truncated]");
+        }
+        self.count = self.count.saturating_add(1);
+        if self.head.len() < 3 {
+            self.head.push(text);
+        } else {
+            if self.tail.len() == 20 {
+                self.tail.pop_front();
+            }
+            self.tail.push_back(text);
+        }
+    }
+
+    fn take_summary(&mut self) -> Option<String> {
+        if self.count == 0 {
+            return None;
+        }
+        let mut lines = std::mem::take(&mut self.head);
+        let omitted = self.count.saturating_sub(lines.len() + self.tail.len());
+        if omitted > 0 {
+            lines.push(format!("... ({omitted} lines omitted) ..."));
+        }
+        lines.extend(self.tail.drain(..));
+        self.count = 0;
+        Some(lines.join("\n"))
+    }
+}
+
 /// A snapshot of one active monitor, returned by [`MonitorManager::list`].
 pub(crate) struct MonitorInfo {
     pub id: String,
+    pub process_id: i32,
     pub description: String,
     pub command: String,
+    pub delivery: MonitorDelivery,
 }
 
 struct MonitorEntry {
     description: String,
     command: String,
+    delivery: MonitorDelivery,
     process_id: i32,
     _task: AbortOnDropHandle<()>,
 }
@@ -70,6 +145,7 @@ impl MonitorManager {
         process_id: i32,
         description: String,
         command: String,
+        delivery: MonitorDelivery,
         task: JoinHandle<()>,
     ) {
         self.monitors.lock().await.insert(
@@ -77,6 +153,7 @@ impl MonitorManager {
             MonitorEntry {
                 description,
                 command,
+                delivery,
                 process_id,
                 _task: AbortOnDropHandle::new(task),
             },
@@ -112,8 +189,10 @@ impl MonitorManager {
             .iter()
             .map(|(id, entry)| MonitorInfo {
                 id: id.clone(),
+                process_id: entry.process_id,
                 description: entry.description.clone(),
                 command: entry.command.clone(),
+                delivery: entry.delivery,
             })
             .collect()
     }
@@ -133,13 +212,96 @@ pub(crate) fn spawn_delivery(
     session: Weak<Session>,
     description: String,
     seed: Vec<u8>,
-    ready: tokio::sync::oneshot::Receiver<()>,
-) -> JoinHandle<()> {
-    tokio::spawn(async move {
+    delivery: MonitorDelivery,
+) -> (JoinHandle<()>, tokio::sync::oneshot::Sender<()>) {
+    let (ready_tx, ready) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
         if ready.await.is_ok() {
-            delivery_loop(process, process_id, id, session, description, seed).await;
+            match delivery {
+                MonitorDelivery::Realtime => {
+                    delivery_loop(process, process_id, id, session, description, seed).await;
+                }
+                MonitorDelivery::Summary { interval } => {
+                    summary_delivery_loop(process, id, session, description, seed, interval).await;
+                }
+            }
         }
-    })
+    });
+    (task, ready_tx)
+}
+
+async fn summary_delivery_loop(
+    process: Arc<UnifiedExecProcess>,
+    id: String,
+    session: Weak<Session>,
+    description: String,
+    seed: Vec<u8>,
+    interval: Duration,
+) {
+    let output = process.output_handles();
+    let mut summary = SummaryBuffer::default();
+    summary.extend(&seed);
+    let mut flush_at = Instant::now() + interval;
+    let mut closing_at = None;
+    loop {
+        let notified = output.output_notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        let chunk = {
+            let mut buffer = output.output_buffer.lock().await;
+            std::mem::take(&mut *buffer).to_bytes_with_omission_marker()
+        };
+        summary.extend(&chunk);
+        if Instant::now() >= flush_at {
+            if !summary.partial.is_empty() || summary.truncated {
+                summary.finish_line();
+            }
+            if let Some(body) = summary.take_summary() {
+                deliver_summary(&session, &description, body).await;
+            }
+            flush_at = Instant::now() + interval;
+        }
+        if output.cancellation_token.is_cancelled() {
+            if output
+                .output_closed
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                break;
+            }
+            closing_at.get_or_insert_with(|| Instant::now() + TRAILING_OUTPUT_GRACE);
+        }
+        tokio::select! {
+            _ = &mut notified => {}
+            () = sleep_until(flush_at) => {}
+            () = output.cancellation_token.cancelled(), if closing_at.is_none() => {
+                closing_at = Some(Instant::now() + TRAILING_OUTPUT_GRACE);
+            }
+            () = wait_until(closing_at) => break,
+        }
+    }
+    if !summary.partial.is_empty() || summary.truncated {
+        summary.finish_line();
+    }
+    let mut body = exit_notice(&process);
+    if let Some(text) = summary.take_summary() {
+        body.push('\n');
+        body.push_str(&text);
+    }
+    if let Some(session) = session.upgrade() {
+        session.services.monitor_manager.deregister_self(&id).await;
+    }
+    deliver_summary(&session, &description, body).await;
+}
+
+async fn deliver_summary(session: &Weak<Session>, description: &str, body: String) {
+    let Some(session) = session.upgrade() else {
+        return;
+    };
+    session
+        .input_queue
+        .enqueue_monitor_notification(MonitorNotification::summary(description, body))
+        .await;
+    session.maybe_start_turn_for_pending_work().await;
 }
 
 async fn delivery_loop(

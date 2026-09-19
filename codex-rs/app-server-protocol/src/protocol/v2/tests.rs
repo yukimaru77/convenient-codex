@@ -137,6 +137,7 @@ fn thread_background_terminals_list_response_round_trips_foreign_paths() {
                 rss_kb: None,
             }],
             next_cursor: None,
+            monitors: vec![],
         };
         let expected = json!({
             "data": [{
@@ -149,6 +150,7 @@ fn thread_background_terminals_list_response_round_trips_foreign_paths() {
                 "rssKb": null,
             }],
             "nextCursor": null,
+            "monitors": [],
         });
 
         assert_eq!(
@@ -163,6 +165,39 @@ fn thread_background_terminals_list_response_round_trips_foreign_paths() {
             "deserializing {uri}",
         );
     }
+}
+
+#[test]
+fn background_terminal_monitor_snapshot_accepts_older_servers_and_delivery_modes() {
+    let mut response: ThreadBackgroundTerminalsListResponse = serde_json::from_value(json!({
+        "data": [], "nextCursor": null
+    }))
+    .expect("older servers do not send monitor snapshots");
+    assert!(response.monitors.is_empty());
+    response.monitors = vec![
+        ThreadMonitor {
+            id: "mon_summary".into(),
+            description: "training".into(),
+            interval_minutes: Some(60.0),
+        },
+        ThreadMonitor {
+            id: "mon_realtime".into(),
+            description: "incident".into(),
+            interval_minutes: None,
+        },
+    ];
+    let wire = json!({
+        "data": [], "nextCursor": null,
+        "monitors": [
+            { "id": "mon_summary", "description": "training", "intervalMinutes": 60.0 },
+            { "id": "mon_realtime", "description": "incident", "intervalMinutes": null }
+        ]
+    });
+    assert_eq!(serde_json::to_value(&response).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<ThreadBackgroundTerminalsListResponse>(wire).unwrap(),
+        response
+    );
 }
 
 #[test]

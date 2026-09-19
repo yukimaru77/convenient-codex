@@ -97,6 +97,7 @@ mod sleep;
 mod thread_archive;
 mod thread_delete;
 mod thread_fork;
+mod thread_goal_monitor;
 mod thread_inject_items;
 mod thread_list;
 mod thread_loaded_list;

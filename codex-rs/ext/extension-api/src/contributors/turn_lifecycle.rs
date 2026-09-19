@@ -9,6 +9,8 @@ use crate::ExtensionData;
 pub struct TurnStartInput<'a> {
     /// Stable host-owned turn identifier.
     pub turn_id: &'a str,
+    /// Host trigger; `goal` denotes native automatic Goal continuation.
+    pub turn_trigger: Option<&'a str>,
     /// Effective collaboration mode for this turn.
     pub collaboration_mode: &'a CollaborationMode,
     /// Total token usage snapshot captured when the turn started.
@@ -23,6 +25,10 @@ pub struct TurnStartInput<'a> {
 
 /// Input supplied when the host completes a turn.
 pub struct TurnStopInput<'a> {
+    /// Last assistant message from the completed turn, if any.
+    pub last_agent_message: Option<&'a str>,
+    /// Registered Monitor delivery tasks belonging to this session at turn end.
+    pub active_monitor_count: usize,
     /// Store scoped to the host session runtime.
     pub session_store: &'a ExtensionData,
     /// Store scoped to this thread runtime.

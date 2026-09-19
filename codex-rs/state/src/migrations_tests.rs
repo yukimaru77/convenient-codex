@@ -14,6 +14,53 @@ use crate::PINNED_THREAD_SECTION_NAME;
 
 const CUSTOM_THREAD_SECTION_ID: &str = "01984de2-8f74-7c91-a3b2-5c5e937cf317";
 
+#[tokio::test]
+async fn goal_wait_migration_preserves_goals_and_continuation_deferrals() -> anyhow::Result<()> {
+    let mut connection = sqlx::SqliteConnection::connect("sqlite::memory:").await?;
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(&mut connection)
+        .await?;
+    let old = Migrator {
+        migrations: Cow::Owned(
+            super::GOALS_MIGRATOR
+                .migrations
+                .iter()
+                .filter(|migration| migration.version <= 2)
+                .cloned()
+                .collect(),
+        ),
+        ..super::runtime_goals_migrator()
+    };
+    old.run(&mut connection).await?;
+    sqlx::query("INSERT INTO thread_goals VALUES ('thread', 'goal', 'preserve me', 'paused', 100, 7, 2, 1, 2)").execute(&mut connection).await?;
+    sqlx::query("INSERT INTO thread_goal_continuation_deferrals VALUES ('thread')")
+        .execute(&mut connection)
+        .await?;
+    super::GOALS_MIGRATOR.run(&mut connection).await?;
+    let saved: (String, String, i64, i64) =
+        sqlx::query_as("SELECT goal_id, status, tokens_used, time_used_seconds FROM thread_goals")
+            .fetch_one(&mut connection)
+            .await?;
+    assert_eq!(saved, ("goal".into(), "paused".into(), 7, 2));
+    let deferrals: Vec<String> =
+        sqlx::query_scalar("SELECT thread_id FROM thread_goal_continuation_deferrals")
+            .fetch_all(&mut connection)
+            .await?;
+    assert_eq!(deferrals, vec!["thread".to_string()]);
+    sqlx::query("UPDATE thread_goals SET status = 'goal_wait'")
+        .execute(&mut connection)
+        .await?;
+    sqlx::query("DELETE FROM thread_goals")
+        .execute(&mut connection)
+        .await?;
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM thread_goal_continuation_deferrals")
+            .fetch_one(&mut connection)
+            .await?;
+    assert_eq!(remaining, 0);
+    Ok(())
+}
+
 fn migrator_through(version: i64) -> Migrator {
     Migrator {
         migrations: Cow::Owned(

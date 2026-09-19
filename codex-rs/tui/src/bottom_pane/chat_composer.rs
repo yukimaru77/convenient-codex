@@ -662,6 +662,7 @@ impl ChatComposer {
                 context_window_pending: false,
                 collaboration_mode_indicator: None,
                 goal_status_indicator: None,
+                monitor_status_indicator: None,
                 ide_context_active: false,
                 status_line_value: None,
                 status_line_hyperlink_url: None,
@@ -982,6 +983,10 @@ impl ChatComposer {
 
     pub fn set_goal_status_indicator(&mut self, indicator: Option<GoalStatusIndicator>) {
         self.footer.goal_status_indicator = indicator;
+    }
+
+    pub(crate) fn set_monitor_status_indicator(&mut self, indicator: Option<Line<'static>>) {
+        self.footer.monitor_status_indicator = indicator;
     }
 
     pub fn set_ide_context_active(&mut self, active: bool) {
@@ -1445,6 +1450,12 @@ impl ChatComposer {
         let mut spans: Vec<Span<'static>> = Vec::new();
         if let Some(vim_mode) = self.vim_mode_indicator_span() {
             spans.push(vim_mode);
+        }
+        if let Some(monitors) = &self.footer.monitor_status_indicator {
+            if !spans.is_empty() {
+                spans.push(" | ".dim());
+            }
+            spans.extend(monitors.spans.clone());
         }
         if let Some(indicators) = status_line_right_indicator_line(
             self.footer.collaboration_mode_indicator,
@@ -5048,6 +5059,10 @@ mod agents_navigation_tests;
 #[cfg(test)]
 #[path = "chat_composer_effort_tests.rs"]
 mod effort_tests;
+
+#[cfg(test)]
+#[path = "chat_composer_monitor_tests.rs"]
+mod monitor_tests;
 
 #[cfg(test)]
 mod tests {

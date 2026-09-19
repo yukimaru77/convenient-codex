@@ -21,7 +21,7 @@ use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 
-/// Starts a monitor on `command` and asserts `marker` reaches the model as a
+/// Starts a realtime monitor on `command` and asserts `marker` reaches the model as a
 /// `[signal watch] ...` user message within 20s. Exercises the whole path: the
 /// tool call, a real background process, its output line, the idle-wake, and the
 /// labelled delivery.
@@ -41,7 +41,7 @@ async fn assert_monitor_wakes_with(command: &str, marker: &str) -> anyhow::Resul
             // User turn: the model calls the monitor tool.
             sse(vec![
                 ev_response_created("resp-1"),
-                ev_function_call("call-1", "monitor", &args),
+                ev_function_call("call-1", "monitor_realtime", &args),
                 ev_completed("resp-1"),
             ]),
             // Continuation after the tool result.
@@ -159,6 +159,237 @@ async fn monitor_idle_wait_is_silent_and_completion_wakes_once() -> anyhow::Resu
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn monitor_default_buffers_output_until_exit_and_preserves_head_and_tail()
+-> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+    let server = start_mock_server().await;
+    let gate = tempfile::tempdir()?;
+    let signal = gate.path().join("finish");
+    let args = json!({
+        "action": "start",
+        "description": "summary watch",
+        "command": format!("seq 1 30; while [ ! -f '{}' ]; do sleep 0.02; done; exit 7", signal.display()),
+    }).to_string();
+    let mock = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("r1"),
+                ev_function_call("start", "monitor", &args),
+                ev_completed("r1"),
+            ]),
+            sse(vec![
+                ev_assistant_message("m1", "waiting"),
+                ev_completed("r2"),
+            ]),
+            sse(vec![
+                ev_assistant_message("m2", "finished"),
+                ev_completed("r3"),
+            ]),
+        ],
+    )
+    .await;
+    let test = test_codex()
+        .with_config(|config| {
+            config.features.enable(Feature::Monitor).unwrap();
+        })
+        .build_with_auto_env(&server)
+        .await?;
+    test.submit_turn("start the summary watch").await?;
+    let monitors = test.codex.list_monitors().await;
+    assert_eq!(monitors.len(), 1);
+    assert_eq!(
+        monitors[0],
+        codex_core::BackgroundMonitorInfo {
+            id: monitors[0].id.clone(),
+            description: "summary watch".into(),
+            interval_minutes: Some(60.0),
+        }
+    );
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        mock.requests().len(),
+        2,
+        "buffered output must not wake the model before the interval"
+    );
+    assert!(
+        mock.requests()[1]
+            .message_input_texts("user")
+            .iter()
+            .all(|text| !text.contains("<monitor_notification>"))
+    );
+    std::fs::write(&signal, "finish")?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 3);
+    let messages = requests[2].message_input_texts("user");
+    let summary = messages
+        .iter()
+        .find(|text| text.contains("[summary watch]"))
+        .expect("exit summary");
+    let numbers: Vec<u32> = summary
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("[summary watch] ")
+                .unwrap_or(line)
+                .parse()
+                .ok()
+        })
+        .collect();
+    assert_eq!(numbers, (1..=3).chain(11..=30).collect::<Vec<_>>());
+    assert!(summary.contains("... (7 lines omitted) ..."));
+    assert!(summary.contains("code 7"));
+    assert!(test.codex.list_monitors().await.is_empty());
+    test.codex.submit(Op::Shutdown).await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn monitor_periodic_delivery_clears_the_previous_interval() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+    let server = start_mock_server().await;
+    let gate = tempfile::tempdir()?;
+    let second = gate.path().join("second");
+    let finish = gate.path().join("finish");
+    let args = json!({
+        "action": "start",
+        "description": "interval watch",
+        "interval_minutes": 0.01,
+        "command": format!("printf FIRST_INTERVAL; while [ ! -f '{}' ]; do sleep 0.02; done; echo SECOND_INTERVAL; while [ ! -f '{}' ]; do sleep 0.02; done", second.display(), finish.display()),
+    }).to_string();
+    let mock = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("r1"),
+                ev_function_call("start", "monitor", &args),
+                ev_completed("r1"),
+            ]),
+            sse(vec![
+                ev_assistant_message("m1", "waiting"),
+                ev_completed("r2"),
+            ]),
+            sse(vec![
+                ev_assistant_message("m2", "first batch"),
+                ev_completed("r3"),
+            ]),
+            sse(vec![
+                ev_assistant_message("m3", "second batch"),
+                ev_completed("r4"),
+            ]),
+            sse(vec![
+                ev_assistant_message("m4", "finished"),
+                ev_completed("r5"),
+            ]),
+        ],
+    )
+    .await;
+    let test = test_codex()
+        .with_config(|config| {
+            config.features.enable(Feature::Monitor).unwrap();
+        })
+        .build_with_auto_env(&server)
+        .await?;
+    test.submit_turn("start the periodic watch").await?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    assert_eq!(mock.requests().len(), 3);
+    assert!(
+        mock.requests()[2]
+            .message_input_texts("user")
+            .iter()
+            .any(|text| text.contains("[interval watch] FIRST_INTERVAL"))
+    );
+    tokio::time::sleep(Duration::from_millis(750)).await;
+    assert_eq!(
+        mock.requests().len(),
+        3,
+        "empty intervals must remain silent"
+    );
+    std::fs::write(&second, "second")?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 4);
+    let messages = requests[3].message_input_texts("user");
+    let latest = messages
+        .iter()
+        .rev()
+        .find(|text| text.contains("[interval watch]"))
+        .expect("second interval notification");
+    assert!(latest.contains("SECOND_INTERVAL"));
+    assert!(
+        !latest.contains("FIRST_INTERVAL"),
+        "interval batches must not replay old output"
+    );
+    std::fs::write(&finish, "finish")?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    test.codex.submit(Op::Shutdown).await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn monitor_rejects_nonpositive_intervals_before_spawning() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+    for interval in [0, -1] {
+        let server = start_mock_server().await;
+        let args = json!({
+            "action": "start",
+            "description": "invalid interval",
+            "interval_minutes": interval,
+            "command": "sleep 60",
+        })
+        .to_string();
+        let mock = mount_sse_sequence(
+            &server,
+            vec![
+                sse(vec![
+                    ev_response_created("r1"),
+                    ev_function_call("start", "monitor", &args),
+                    ev_completed("r1"),
+                ]),
+                sse(vec![
+                    ev_assistant_message("m1", "invalid interval"),
+                    ev_completed("r2"),
+                ]),
+            ],
+        )
+        .await;
+        let test = test_codex()
+            .with_config(|config| {
+                config.features.enable(Feature::Monitor).unwrap();
+            })
+            .build_with_auto_env(&server)
+            .await?;
+        test.submit_turn("start the watch").await?;
+        assert!(
+            mock.function_call_output_text("start")
+                .expect("validation error")
+                .contains("interval_minutes must be positive")
+        );
+        assert!(
+            test.codex.list_background_terminals().await.is_empty(),
+            "invalid interval {interval} must not spawn a process"
+        );
+        test.codex.submit(Op::Shutdown).await?;
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn monitor_stop_terminates_process_and_does_not_wake() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
@@ -197,6 +428,14 @@ async fn monitor_stop_terminates_process_and_does_not_wake() -> anyhow::Result<(
         .expect("monitor id")
         .trim_end_matches(':');
     let args = json!({"action":"stop", "id":id}).to_string();
+    assert_eq!(
+        test.codex.list_monitors().await,
+        vec![codex_core::BackgroundMonitorInfo {
+            id: id.to_string(),
+            description: "quiet test".into(),
+            interval_minutes: Some(60.0),
+        }]
+    );
     server.reset().await;
     let mock = mount_sse_sequence(
         &server,
@@ -231,6 +470,7 @@ async fn monitor_stop_terminates_process_and_does_not_wake() -> anyhow::Result<(
             .contains("No active monitors")
     );
     assert!(test.codex.list_background_terminals().await.is_empty());
+    assert!(test.codex.list_monitors().await.is_empty());
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(
         mock.requests().len(),
