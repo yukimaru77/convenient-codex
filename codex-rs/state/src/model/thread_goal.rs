@@ -13,6 +13,7 @@ use super::epoch_millis_to_datetime;
 #[serde(rename_all = "snake_case")]
 pub enum ThreadGoalStatus {
     Active,
+    GoalWait,
     Paused,
     Blocked,
     UsageLimited,
@@ -24,6 +25,7 @@ impl ThreadGoalStatus {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Active => "active",
+            Self::GoalWait => "goal_wait",
             Self::Paused => "paused",
             Self::Blocked => "blocked",
             Self::UsageLimited => "usage_limited",
@@ -47,6 +49,7 @@ impl TryFrom<&str> for ThreadGoalStatus {
     fn try_from(value: &str) -> Result<Self> {
         match value {
             "active" => Ok(Self::Active),
+            "goal_wait" => Ok(Self::GoalWait),
             "paused" => Ok(Self::Paused),
             "blocked" => Ok(Self::Blocked),
             "usage_limited" => Ok(Self::UsageLimited),

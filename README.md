@@ -1,81 +1,103 @@
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
-<p align="center">
-  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
-</p>
-</br>
-If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
-</br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
-</br>If you are looking for the <em>cloud-based agent</em> from OpenAI, <strong>Codex Web</strong>, go to <a href="https://chatgpt.com/codex">chatgpt.com/codex</a>.</p>
+# 便利な Codex — convenient-codex
 
----
+**同じ会話でローカル・SSH・Docker を行き来し、長い処理を監視しながら Goal を進めるための個人版 Codex。** [OpenAI Codex](https://github.com/openai/codex) を土台に、次の機能を加えています。
 
-## Quickstart
+| 機能 | できること |
+| --- | --- |
+| **実行環境の切替** | **`env_switch` で SSH・Docker・その入れ子へ移動。コマンド、パッチ、画像確認、監視に同じ実行先を使う** |
+| 環境の確認 | `env_status` / `env_list` で既定実行先と登録済み環境を確認する |
+| 定期的な監視 | `monitor` で出力の先頭 3 行・末尾 20 行を通知。既定は 60 分ごとで、無出力なら通知せず、終了時はすぐ結果を届ける |
+| 即時の監視 | `monitor_realtime` で即時性が必要な出力を通知する |
+| Goal の待機と復帰 | 最終応答の `GOAL_WAIT` と同じセッションの Monitor により待機し、新しいユーザー入力や監視通知で再開する |
+| 状況表示 | TUI に実行環境、監視件数・周期、Goal 状態を表示する |
 
-### Installing and running Codex CLI
+Monitor があるだけでは Goal を止めません。Goal の継続プロンプトは、研究成果を縮小せず、有用な作業を進め、結果待ちだけになったら休む方針です。細部・制約・受け入れ条件は [製品仕様](CUSTOM_CODEX_SPEC.md) にまとめています。
 
-Run the following on Mac or Linux to install Codex CLI:
+## 現在の公式基点と製品識別
 
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
+| 項目 | 値 |
+| --- | --- |
+| 製品名 | `convenient-codex`（便利な Codex） |
+| 独自改訂 | `1` |
+| 公式基点 | [`rust-v0.155.1`](https://github.com/openai/codex/releases/tag/rust-v0.155.1) |
+| 公式コミット | `be2951ea34f0d295ed0becf97079f92fa5f6950e` |
+| 旧版の保存 | `archive/custom-0.153.4` — `824932436f78444f0376045c62b68f105391d877` |
+| 移植の確認状況 | ビルド・テスト・導入の結果は [移行記録](MIGRATION_0.155.1.md) に記録する |
+
+[CONVENIENT_CODEX.json](CONVENIENT_CODEX.json) が、製品名・独自改訂・公式タグとコミット・移植元を記録する機械可読の識別情報です。ソースの変更を特定するときは、この情報と Git コミットを使います。
+
+**Cargo のパッケージ版と `codex --version` は、意図的に公式の `0.155.1` を維持します。** `env_switch` がリモート用バイナリを準備するときに、この版から公式リリースを選ぶためです。独自改訂は JSON で別管理し、存在しない独自リリースを取得しに行かないようにします。`--version` だけでは改造版と公式版を区別できません。
+
+## この checkout からビルド・導入する
+
+必要な Rust toolchain と補助ツールは [ビルド手順](docs/install.md) を参照してください。CLI には `codex-code-mode-host` などの補助ファイルも必要なため、公式の [パッケージ作成処理](scripts/codex_package/README.md) でまとめてビルドします。ビルド・導入の Python は 3.10 以降が必要です。以下はこの Mac の Python 3.12 を使う例で、リポジトリのルートから実行します。
+
+```bash
+STABLE_GIT_COMMIT="$(git rev-parse HEAD)" CODEX_REPO_ROOT="$PWD" \
+  python3.12 scripts/build_codex_package.py \
+  --variant codex --cargo-profile release \
+  --package-dir /tmp/convenient-codex-package
+
+python3.12 scripts/convenient-install.py \
+  --entrypoint-bin /tmp/convenient-codex-package/bin/codex \
+  --code-mode-host-bin /tmp/convenient-codex-package/bin/codex-code-mode-host \
+  --rg-bin /tmp/convenient-codex-package/codex-path/rg \
+  --zsh-bin /tmp/convenient-codex-package/codex-resources/zsh/bin/zsh
+
+~/.local/bin/convenient-codex --build-info
+~/.local/bin/convenient-codex
 ```
 
-Run the following on Windows to install Codex CLI:
+[専用インストーラー](scripts/convenient-install.py) は既にビルドしたバイナリを受け取り、補助ファイルを含む版別パッケージを組み立てます。Linux ではビルドと導入の `--target` を揃え、`--bwrap-bin /tmp/convenient-codex-package/codex-resources/bwrap` も渡してください。ローカルへの導入は macOS / Linux が対象です。
 
-```shell
-powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
+配布用には変更をコミットしてからビルドします。`STABLE_GIT_COMMIT` は upstream の仕組みで実行ファイルにもコミットを記録する指定です。
+
+既定の配布先は `~/.local/share/convenient-codex/releases/0.155.1+convenient.1`、選択中の版は `~/.local/share/convenient-codex/current` です。`~/.local/bin/convenient-codex` から選択中の版を起動します。導入時の `build-info.json` に製品 manifest、導入した checkout の Git コミット、未コミット変更の有無、バイナリの SHA-256 を残し、ランチャーの `--build-info` で表示します。
+
+普段の `codex` コマンドにも使う場合は、導入コマンドに `--set-default` を付けます。これは `~/.local/bin/codex` に同じランチャーを作る指定で、PATH は変更しません。シェルの設定で `~/.local/bin` を npm の実行先より前に登録し、現在のシェルでは次のように確認します。
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+hash -r
+command -v codex
+codex --build-info
+codex --version
 ```
 
-The standalone installers download from `https://releases.openai.com/codex` by default and fall back to GitHub Releases if a metadata or asset download is unavailable. To force GitHub Releases, set `CODEX_INSTALLER_USE_RELEASES_OPENAI_COM` to `false` (`0` and `no` are also accepted):
+`command -v codex` が `~/.local/bin/codex` を指し、`--build-info` の `product.name` が `convenient-codex`、`installation.version` が `0.155.1+convenient.1` なら、この版のランチャーを使っています。`--version` は `codex-cli 0.155.1` と表示します。`--build-info` は専用ランチャーの引数で、パッケージ内の `bin/codex` を直接実行する場合には使えません。
 
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_INSTALLER_USE_RELEASES_OPENAI_COM=false sh
+既存の npm パッケージとその `codex` は残します。npm 版へ戻すときは PATH の順序を元に戻すか、専用インストーラーが作った `~/.local/bin/codex` だけを退避し、`hash -r` の後に `command -v codex` を確認します。元の npm 版は `"$(npm prefix -g)/bin/codex" --version` でも直接確認できます。`~/.local/bin/convenient-codex` と版別パッケージは、そのまま残して併用できます。
+
+自分が管理していない同名ランチャーや symlink は上書きせず停止します。同じ独自改訂に異なる内容を入れ直す場合も拒否するため、変更版を導入するときは manifest の `product.patch_revision` を増やします。
+
+既存の会話・認証・設定を利用します。`env_switch` は既定で有効、Monitor は `monitor = true` で有効になります。既存の `~/.codex/config.toml` の `[features]` に統合してください。
+
+```toml
+[features]
+env_switch = true
+monitor = true
 ```
 
-```powershell
-$env:CODEX_INSTALLER_USE_RELEASES_OPENAI_COM='false'; irm https://chatgpt.com/codex/install.ps1 | iex
+この版の導入検証の結果は [移行記録](MIGRATION_0.155.1.md) を参照してください。通常の `npm install -g @openai/codex`、Homebrew、OpenAI の installer は公式版を導入する手段です。この checkout の独自機能を配布するものではありません。デスクトップアプリ内蔵の実行ファイルも別です。
+
+## 公式の安定版との差を確認する
+
+Python 3.9 以降の標準ライブラリだけで実行できます。カレントディレクトリに関係なく、スクリプトのあるリポジトリの manifest を読みます。
+
+```bash
+python3 scripts/convenient-check-upstream.py
 ```
 
-Codex CLI can also be installed via the following package managers:
+GitHub の公式 latest release API と `CONVENIENT_CODEX.json` を比較し、採用中の公式タグ、最新安定版、比較結果、リリース URL を表示します。更新候補があっても成功終了し、取得失敗・不正なメタデータは説明を出して非ゼロで終了します。
 
-```shell
-# Install using npm
-npm install -g @openai/codex
-```
+これは確認だけの処理です。ビルド、インストール、定期実行、Git の変更、push、外部への通知は行いません。更新候補を取り込み検証する際の要件は [製品仕様](CUSTOM_CODEX_SPEC.md) にあります。
 
-```shell
-# Install using Homebrew
-brew install --cask codex
-```
+## 仕様と upstream の資料
 
-Then simply run `codex` to get started.
+- **[便利な Codex の製品仕様](CUSTOM_CODEX_SPEC.md)** — 維持する機能、制約、更新時の受け入れ条件
+- [製品識別情報](CONVENIENT_CODEX.json)
+- [実行環境切替の移植元記録](ENV_SWITCH.md) / [Monitor の移植元記録](MONITOR.md) — 過去の版の検証記録を含む
+- [公式 Codex ドキュメント](https://developers.openai.com/codex) / [認証](https://developers.openai.com/codex/auth)
+- [upstream の開発・貢献ガイド](docs/contributing.md)
 
-<details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
-
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
-
-- macOS
-  - Apple Silicon/arm64: `codex-aarch64-apple-darwin.tar.gz`
-  - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
-- Linux
-  - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
-
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
-
-</details>
-
-### Using Codex with your ChatGPT plan
-
-Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your ChatGPT account to use Codex as part of your Plus, Pro, Business, Edu, or Enterprise plan. [Learn more about what's included in your ChatGPT plan](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
-
-You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
-
-## Docs
-
-- [**Codex Documentation**](https://developers.openai.com/codex)
-- [**Contributing**](./docs/contributing.md)
-- [**Installing & building**](./docs/install.md)
-- [**Open source fund**](./docs/open-source-fund.md)
-
-This repository is licensed under the [Apache-2.0 License](LICENSE).
+OpenAI Codex 由来の [Apache-2.0 License](LICENSE) と [NOTICE](NOTICE) を継承します。

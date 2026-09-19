@@ -303,6 +303,10 @@ pub struct ThreadSettings {
     #[serde(default)]
     pub multi_agent_mode: MultiAgentMode,
     pub personality: Option<Personality>,
+    /// The active execution environment id when a non-local environment has
+    /// been selected (e.g. `"docker:container"` or `"ssh:host"`).
+    /// `None` means the thread is running in the default local environment.
+    pub active_environment_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -770,6 +774,7 @@ pub struct ThreadSetNameResponse {}
 v2_enum_from_core! {
     pub enum ThreadGoalStatus from CoreThreadGoalStatus {
         Active,
+        GoalWait,
         Paused,
         Blocked,
         UsageLimited,
@@ -1205,9 +1210,22 @@ pub struct ThreadBackgroundTerminal {
 #[ts(export_to = "v2/")]
 pub struct ThreadBackgroundTerminalsListResponse {
     pub data: Vec<ThreadBackgroundTerminal>,
+    /// Live monitors for the entire thread, independent of terminal pagination.
+    #[serde(default)]
+    pub monitors: Vec<ThreadMonitor>,
     /// Opaque cursor to pass to the next call to continue after the last item.
     /// If None, there are no more items to return.
     pub next_cursor: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadMonitor {
+    pub id: String,
+    pub description: String,
+    /// Summary interval in minutes; null identifies monitor_realtime.
+    pub interval_minutes: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

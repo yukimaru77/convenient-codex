@@ -38,6 +38,10 @@ use codex_protocol::ThreadId;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Settings;
+use codex_protocol::items::AgentMessageContent;
+use codex_protocol::items::AgentMessageItem;
+use codex_protocol::items::TurnItem;
+use codex_protocol::models::MessagePhase;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
@@ -50,6 +54,9 @@ use codex_protocol::protocol::TruncationPolicy;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;
+
+#[path = "cases/goal_wait.rs"]
+mod goal_wait_cases;
 
 #[tokio::test]
 async fn installed_goal_tools_create_goal_and_fill_empty_preview() -> anyhow::Result<()> {
@@ -1737,6 +1744,17 @@ impl GoalExtensionHarness {
     }
 
     async fn start_turn_with_mode(&self, turn_id: &str, mode: ModeKind, usage: &TokenUsage) {
+        self.start_turn_with_trigger(turn_id, mode, usage, None)
+            .await;
+    }
+
+    async fn start_turn_with_trigger(
+        &self,
+        turn_id: &str,
+        mode: ModeKind,
+        usage: &TokenUsage,
+        trigger: Option<&str>,
+    ) {
         let turn_store = ExtensionData::new(turn_id);
         let mut collaboration_mode = default_collaboration_mode();
         collaboration_mode.mode = mode;
@@ -1744,6 +1762,7 @@ impl GoalExtensionHarness {
             contributor
                 .on_turn_start(TurnStartInput {
                     turn_id,
+                    turn_trigger: trigger,
                     collaboration_mode: &collaboration_mode,
                     token_usage_at_turn_start: usage,
                     session_store: &self.session_store,
@@ -1755,10 +1774,42 @@ impl GoalExtensionHarness {
     }
 
     async fn stop_turn(&self, turn_id: &str) {
+        self.stop_turn_with_message(
+            turn_id, /*last_agent_message*/ None, /*active_monitor_count*/ 0,
+        )
+        .await;
+    }
+
+    async fn stop_turn_with_message(
+        &self,
+        turn_id: &str,
+        last_agent_message: Option<&str>,
+        active_monitor_count: usize,
+    ) {
         let turn_store = ExtensionData::new(turn_id);
         for contributor in self.registry.turn_lifecycle_contributors() {
+            if let Some(text) = last_agent_message {
+                contributor
+                    .on_item_completed(
+                        &self.thread_store,
+                        &turn_store,
+                        &TurnItem::AgentMessage(AgentMessageItem {
+                            id: format!("{turn_id}-final"),
+                            content: vec![AgentMessageContent::Text {
+                                text: text.to_string(),
+                            }],
+                            phase: Some(MessagePhase::FinalAnswer),
+                            memory_citation: None,
+                            delivery: None,
+                            questions: None,
+                        }),
+                    )
+                    .await;
+            }
             contributor
                 .on_turn_stop(TurnStopInput {
+                    last_agent_message,
+                    active_monitor_count,
                     session_store: &self.session_store,
                     thread_store: &self.thread_store,
                     turn_store: &turn_store,
@@ -2020,6 +2071,7 @@ fn input_token_usage(input_tokens: i64) -> TokenUsage {
 fn protocol_status(status: codex_state::ThreadGoalStatus) -> ThreadGoalStatus {
     match status {
         codex_state::ThreadGoalStatus::Active => ThreadGoalStatus::Active,
+        codex_state::ThreadGoalStatus::GoalWait => ThreadGoalStatus::GoalWait,
         codex_state::ThreadGoalStatus::Paused => ThreadGoalStatus::Paused,
         codex_state::ThreadGoalStatus::Blocked => ThreadGoalStatus::Blocked,
         codex_state::ThreadGoalStatus::UsageLimited => ThreadGoalStatus::UsageLimited,

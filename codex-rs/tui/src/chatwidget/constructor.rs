@@ -135,6 +135,7 @@ impl ChatWidget {
             status_account_display,
             remote_connection: None,
             local_worktree_operations: true,
+            env_switch_badge: None,
             token_info: None,
             token_usage_pending: false,
             rate_limit_snapshots_by_limit_id: BTreeMap::new(),

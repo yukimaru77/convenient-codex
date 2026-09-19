@@ -94,6 +94,7 @@ pub(crate) enum CollaborationModeIndicator {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum GoalStatusIndicator {
+    GoalWait,
     Active { usage: Option<String> },
     Paused,
     Blocked,
@@ -563,6 +564,7 @@ pub(crate) fn goal_status_indicator_line(
             }
         }
         GoalStatusIndicator::Paused => "Goal paused (/goal resume)".to_string(),
+        GoalStatusIndicator::GoalWait => "Goal waiting (resumes on a new turn)".to_string(),
         GoalStatusIndicator::Blocked => "Goal stalled (/goal resume)".to_string(),
         GoalStatusIndicator::UsageLimited => "Goal hit usage limits (/goal resume)".to_string(),
         GoalStatusIndicator::BudgetLimited { usage } => {

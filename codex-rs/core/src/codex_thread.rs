@@ -202,6 +202,15 @@ pub struct BackgroundTerminalInfo {
     pub cwd: PathUri,
 }
 
+/// A live monitor registered in this session; never restored from conversation history.
+#[derive(Debug, PartialEq)]
+pub struct BackgroundMonitorInfo {
+    pub id: String,
+    pub description: String,
+    /// Summary interval in minutes, or None for realtime delivery.
+    pub interval_minutes: Option<f64>,
+}
+
 /// Conduit for the bidirectional stream of messages that compose a thread
 /// (formerly called a conversation) in Codex.
 impl CodexThread {
@@ -604,6 +613,31 @@ impl CodexThread {
 
     pub async fn list_background_terminals(&self) -> Vec<BackgroundTerminalInfo> {
         self.session.list_background_terminals().await
+    }
+
+    pub async fn list_monitors(&self) -> Vec<BackgroundMonitorInfo> {
+        let monitors = self.session.services.monitor_manager.list().await;
+        let processes = self.list_background_terminals().await;
+        let mut monitors = monitors
+            .into_iter()
+            .filter(|monitor| {
+                processes
+                    .iter()
+                    .any(|process| process.process_id == monitor.process_id.to_string())
+            })
+            .map(|monitor| BackgroundMonitorInfo {
+                id: monitor.id,
+                description: monitor.description,
+                interval_minutes: match monitor.delivery {
+                    crate::unified_exec::MonitorDelivery::Summary { interval } => {
+                        Some(interval.as_secs_f64() / 60.0)
+                    }
+                    crate::unified_exec::MonitorDelivery::Realtime => None,
+                },
+            })
+            .collect::<Vec<_>>();
+        monitors.sort_by(|left, right| left.id.cmp(&right.id));
+        monitors
     }
 
     pub async fn terminate_background_terminal(&self, process_id: i32) -> bool {

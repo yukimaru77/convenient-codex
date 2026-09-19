@@ -59,6 +59,7 @@ fn test_get_command_uses_default_shell_when_unspecified() -> anyhow::Result<()> 
         Arc::new(default_user_shell()),
         &UnifiedExecShellMode::Direct,
         /*allow_login_shell*/ true,
+        ShellLocation::Local,
     )
     .map_err(anyhow::Error::msg)?;
     let command = resolved.command;
@@ -81,6 +82,7 @@ fn test_get_command_respects_explicit_bash_shell() -> anyhow::Result<()> {
         Arc::new(default_user_shell()),
         &UnifiedExecShellMode::Direct,
         /*allow_login_shell*/ true,
+        ShellLocation::Local,
     )
     .map_err(anyhow::Error::msg)?;
     let command = resolved.command;
@@ -122,6 +124,7 @@ fn test_get_command_resolves_powershell_by_type() -> anyhow::Result<()> {
         Arc::new(default_user_shell()),
         &UnifiedExecShellMode::Direct,
         /*allow_login_shell*/ true,
+        ShellLocation::Local,
     )
     .map_err(anyhow::Error::msg)?;
     let expected_shell = get_shell(ShellType::PowerShell)
@@ -147,6 +150,7 @@ fn test_get_command_respects_explicit_cmd_shell() -> anyhow::Result<()> {
         Arc::new(default_user_shell()),
         &UnifiedExecShellMode::Direct,
         /*allow_login_shell*/ true,
+        ShellLocation::Local,
     )
     .map_err(anyhow::Error::msg)?;
     let command = resolved.command;
@@ -165,6 +169,7 @@ fn test_get_command_rejects_explicit_login_when_disallowed() -> anyhow::Result<(
         Arc::new(default_user_shell()),
         &UnifiedExecShellMode::Direct,
         /*allow_login_shell*/ false,
+        ShellLocation::Local,
     )
     .expect_err("explicit login should be rejected");
 
@@ -216,6 +221,52 @@ async fn exec_command_rejects_login_when_selected_environment_disallows_it() {
 }
 
 #[test]
+fn test_get_command_uses_environment_specific_login_defaults_for_sh() -> anyhow::Result<()> {
+    let json = r#"{"cmd": "echo hello", "shell": "/bin/sh"}"#;
+    let args: ExecCommandArgs = parse_arguments(json)?;
+
+    for (location, expected_flag) in [(ShellLocation::Local, "-lc"), (ShellLocation::Remote, "-c")]
+    {
+        let resolved = get_command(
+            &args,
+            Arc::new(default_user_shell()),
+            &UnifiedExecShellMode::Direct,
+            /*allow_login_shell*/ true,
+            location,
+        )
+        .map_err(anyhow::Error::msg)?;
+
+        assert_eq!(resolved.shell_type, ShellType::Sh);
+        assert_eq!(
+            resolved.command,
+            vec!["/bin/sh", expected_flag, "echo hello"]
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn test_get_command_rejects_explicit_login_for_remote_sh() -> anyhow::Result<()> {
+    let json = r#"{"cmd": "echo hello", "shell": "/bin/sh", "login": true}"#;
+    let args: ExecCommandArgs = parse_arguments(json)?;
+
+    let err = get_command(
+        &args,
+        Arc::new(default_user_shell()),
+        &UnifiedExecShellMode::Direct,
+        /*allow_login_shell*/ true,
+        ShellLocation::Remote,
+    )
+    .expect_err("explicit login should be rejected for sh");
+
+    assert!(
+        err.contains("not supported for remote `sh`"),
+        "unexpected error: {err}"
+    );
+    Ok(())
+}
+
+#[test]
 fn test_get_command_rejects_explicit_shell_in_zsh_fork_mode() -> anyhow::Result<()> {
     let json = r#"{"cmd": "echo hello", "shell": "/bin/bash"}"#;
     let args: ExecCommandArgs = parse_arguments(json)?;
@@ -238,6 +289,7 @@ fn test_get_command_rejects_explicit_shell_in_zsh_fork_mode() -> anyhow::Result<
         Arc::new(default_user_shell()),
         &shell_mode,
         /*allow_login_shell*/ true,
+        ShellLocation::Local,
     )
     .expect_err("explicit shell should be rejected");
 

@@ -767,6 +767,9 @@
             "enable_request_compression": {
               "type": "boolean"
             },
+            "env_switch": {
+              "type": "boolean"
+            },
             "exec_permission_approvals": {
               "type": "boolean"
             },
@@ -870,6 +873,9 @@
               "type": "boolean"
             },
             "mentions_v2": {
+              "type": "boolean"
+            },
+            "monitor": {
               "type": "boolean"
             },
             "multi_agent": {
@@ -6292,6 +6298,9 @@
         "enable_request_compression": {
           "type": "boolean"
         },
+        "env_switch": {
+          "type": "boolean"
+        },
         "exec_permission_approvals": {
           "type": "boolean"
         },
@@ -6395,6 +6404,9 @@
           "type": "boolean"
         },
         "mentions_v2": {
+          "type": "boolean"
+        },
+        "monitor": {
           "type": "boolean"
         },
         "multi_agent": {

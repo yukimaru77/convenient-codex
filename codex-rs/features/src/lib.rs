@@ -332,6 +332,9 @@ pub enum Feature {
     ReasoningEffortOverride,
     /// Add current-time reminders to model-visible context.
     CurrentTimeReminder,
+    /// Expose background command monitors with periodic summaries or realtime
+    /// output notifications.
+    Monitor,
     /// Route MCP tool approval prompts through the MCP elicitation request path.
     ToolCallMcpElicitation,
     /// Prompt Codex Apps connector auth failures through MCP URL elicitations.
@@ -360,6 +363,11 @@ pub enum Feature {
     UseAgentIdentity,
     /// Enable workspace dependency support.
     WorkspaceDependencies,
+    /// Enable the `env_switch` tool to migrate the execution environment into
+    /// a Docker container or SSH host without restarting the session.
+    /// Enabled by default in this fork; set `features.env_switch = false` to
+    /// opt out.
+    EnvSwitch,
 
     // Removed
     /// Removed compatibility flag retained as a no-op so old configs can
@@ -1638,6 +1646,12 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
+        id: Feature::Monitor,
+        key: "monitor",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
         id: Feature::CollaborationModes,
         key: "collaboration_modes",
         stage: Stage::Removed,
@@ -1776,6 +1790,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::WorkspaceDependencies,
         key: "workspace_dependencies",
+        stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::EnvSwitch,
+        key: "env_switch",
         stage: Stage::Stable,
         default_enabled: true,
     },

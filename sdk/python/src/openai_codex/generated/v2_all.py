@@ -5207,6 +5207,7 @@ class ThreadGoalGetParams(BaseModel):
 
 class ThreadGoalStatus(Enum):
     active = "active"
+    goal_wait = "goalWait"
     paused = "paused"
     blocked = "blocked"
     usage_limited = "usageLimited"
@@ -5498,6 +5499,21 @@ class ThreadMetadataUpdateParams(BaseModel):
         ),
     ] = None
     thread_id: Annotated[str, Field(alias="threadId")]
+
+
+class ThreadMonitor(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    description: str
+    id: str
+    interval_minutes: Annotated[
+        float | None,
+        Field(
+            alias="intervalMinutes",
+            description="Summary interval in minutes; null identifies monitor_realtime.",
+        ),
+    ] = None
 
 
 class ThreadNameUpdatedNotification(BaseModel):
@@ -9871,6 +9887,13 @@ class ThreadSettings(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
+    active_environment_id: Annotated[
+        str | None,
+        Field(
+            alias="activeEnvironmentId",
+            description='The active execution environment id when a non-local environment has been selected (e.g. `"docker:container"` or `"ssh:host"`). `None` means the thread is running in the default local environment.',
+        ),
+    ] = None
     active_permission_profile: Annotated[
         ActivePermissionProfile | None, Field(alias="activePermissionProfile")
     ] = None

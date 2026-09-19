@@ -1,5 +1,7 @@
 //! Footer and status-row presentation state for the chat composer.
 //! Owners schedule flash expiry redraws; replacing a draft clears its flash.
+//! Live monitor indicators are supplied by the app's background-terminal status
+//! requests and compose with the existing goal/mode indicator on the status row.
 
 use std::time::Instant;
 
@@ -38,6 +40,7 @@ pub(super) struct FooterState {
     pub(super) context_window_pending: bool,
     pub(super) collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     pub(super) goal_status_indicator: Option<GoalStatusIndicator>,
+    pub(super) monitor_status_indicator: Option<Line<'static>>,
     pub(super) ide_context_active: bool,
     pub(super) status_line_value: Option<Line<'static>>,
     pub(super) status_line_hyperlink_url: Option<String>,

@@ -107,6 +107,9 @@ fn goal_summary_lines(goal: &AppThreadGoal) -> Vec<Line<'static>> {
     }
     let command_hint = match goal.status {
         AppThreadGoalStatus::Active => "Commands: /goal edit, /goal pause, /goal clear",
+        AppThreadGoalStatus::GoalWait => {
+            "Commands: /goal edit, /goal pause, /goal resume, /goal clear"
+        }
         AppThreadGoalStatus::Paused
         | AppThreadGoalStatus::Blocked
         | AppThreadGoalStatus::UsageLimited => "Commands: /goal edit, /goal resume, /goal clear",
@@ -122,6 +125,7 @@ fn goal_summary_lines(goal: &AppThreadGoal) -> Vec<Line<'static>> {
 fn goal_status_label(status: AppThreadGoalStatus) -> &'static str {
     match status {
         AppThreadGoalStatus::Active => "active",
+        AppThreadGoalStatus::GoalWait => "waiting for a new turn",
         AppThreadGoalStatus::Paused => "paused",
         AppThreadGoalStatus::Blocked => "stalled",
         AppThreadGoalStatus::UsageLimited => "usage limited",
@@ -134,6 +138,7 @@ fn edited_goal_status(status: AppThreadGoalStatus) -> AppThreadGoalStatus {
     match status {
         AppThreadGoalStatus::Active => AppThreadGoalStatus::Active,
         AppThreadGoalStatus::Paused
+        | AppThreadGoalStatus::GoalWait
         | AppThreadGoalStatus::Blocked
         | AppThreadGoalStatus::UsageLimited => status,
         AppThreadGoalStatus::BudgetLimited | AppThreadGoalStatus::Complete => {

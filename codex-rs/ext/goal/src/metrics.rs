@@ -42,6 +42,7 @@ impl GoalMetrics {
                 previous_status,
                 Some(
                     codex_state::ThreadGoalStatus::Paused
+                        | codex_state::ThreadGoalStatus::GoalWait
                         | codex_state::ThreadGoalStatus::Blocked
                         | codex_state::ThreadGoalStatus::UsageLimited
                 )
@@ -65,7 +66,9 @@ impl GoalMetrics {
             codex_state::ThreadGoalStatus::UsageLimited => GOAL_USAGE_LIMITED_METRIC,
             codex_state::ThreadGoalStatus::BudgetLimited => GOAL_BUDGET_LIMITED_METRIC,
             codex_state::ThreadGoalStatus::Complete => GOAL_COMPLETED_METRIC,
-            codex_state::ThreadGoalStatus::Active | codex_state::ThreadGoalStatus::Paused => {
+            codex_state::ThreadGoalStatus::Active
+            | codex_state::ThreadGoalStatus::Paused
+            | codex_state::ThreadGoalStatus::GoalWait => {
                 return;
             }
         };

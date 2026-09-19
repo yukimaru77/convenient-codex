@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "product": {
+    "name": "convenient-codex",
+    "display_name": "便利な Codex",
+    "patch_revision": 1
+  },
+  "upstream": {
+    "repository": "openai/codex",
+    "tag": "rust-v0.155.1",
+    "version": "0.155.1",
+    "commit": "be2951ea34f0d295ed0becf97079f92fa5f6950e"
+  },
+  "provenance": {
+    "archive_branch": "archive/custom-0.153.4",
+    "archive_commit": "824932436f78444f0376045c62b68f105391d877"
+  },
+  "features": [
+    "env_switch",
+    "env_status",
+    "env_list",
+    "monitor",
+    "monitor_realtime",
+    "goal_wait",
+    "research_goal_continuation",
+    "execution_environment_and_monitor_status"
+  ],
+  "versioning": {
+    "cargo_version": "0.155.1",
+    "reason": "Keep the official release version for env_switch remote provisioning; identify the product and custom patch revision separately."
+  }
+}
