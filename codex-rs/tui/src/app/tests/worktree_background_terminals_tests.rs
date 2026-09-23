@@ -59,6 +59,7 @@ fn old_local_daemon_worktree_error_suggests_update() -> Result<()> {
         managed_worktree_creation::background_terminals_blocker(
             Ok(ThreadBackgroundTerminalsListResponse {
                 data: Vec::new(),
+                monitors: Vec::new(),
                 next_cursor: None,
             }),
             &target,

@@ -18,12 +18,14 @@ use crate::tools::code_mode::CodeModeService;
 use crate::tools::handlers::ToolSearchHandlerCache;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::sandboxing::ApprovalStore;
+use crate::unified_exec::MonitorManager;
 use crate::unified_exec::UnifiedExecProcessManager;
 use arc_swap::ArcSwap;
 use arc_swap::ArcSwapOption;
 use codex_analytics::AnalyticsEventsClient;
 use codex_attachment_store::AttachmentStore;
 use codex_core_plugins::PluginsManager;
+use codex_exec_server::EnvironmentManager;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionDataInit;
 use codex_extension_api::ExtensionRegistry;
@@ -51,6 +53,7 @@ pub(crate) struct SessionServices {
     pub(crate) mcp_handler_cache: McpHandlerCache,
     pub(crate) unified_exec_manager: UnifiedExecProcessManager,
     pub(crate) elicitations: ElicitationService,
+    pub(crate) monitor_manager: MonitorManager,
     #[cfg_attr(not(unix), allow(dead_code))]
     pub(crate) shell_zsh_path: Option<PathBuf>,
     #[cfg_attr(not(unix), allow(dead_code))]
@@ -99,4 +102,13 @@ pub(crate) struct SessionServices {
     pub(crate) code_mode_service: CodeModeService,
     pub(crate) tool_search_handler_cache: ToolSearchHandlerCache,
     pub(crate) turn_environments: Arc<ThreadEnvironments>,
+    /// Shared process-level environment registry. Sessions carry an `Arc` handle so they can pass
+    /// the same manager through child-thread spawn paths without reconstructing it.
+    ///
+    /// Per-environment metadata (cwd, shell, last launcher) is stored directly
+    /// on the `EnvironmentManager` so that sub-agents that share the same
+    /// `Arc<EnvironmentManager>` can look up data registered by the parent
+    /// session.  See `EnvironmentManager::set_environment_metadata` /
+    /// `get_environment_metadata` / `set_last_launcher` / `get_last_launcher`.
+    pub(crate) environment_manager: Arc<EnvironmentManager>,
 }

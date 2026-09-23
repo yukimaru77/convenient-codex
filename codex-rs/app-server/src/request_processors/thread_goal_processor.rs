@@ -532,6 +532,7 @@ pub(super) fn api_thread_goal_from_state(goal: codex_state::ThreadGoal) -> Threa
 fn api_thread_goal_status_from_state(status: codex_state::ThreadGoalStatus) -> ThreadGoalStatus {
     match status {
         codex_state::ThreadGoalStatus::Active => ThreadGoalStatus::Active,
+        codex_state::ThreadGoalStatus::GoalWait => ThreadGoalStatus::GoalWait,
         codex_state::ThreadGoalStatus::Paused => ThreadGoalStatus::Paused,
         codex_state::ThreadGoalStatus::Blocked => ThreadGoalStatus::Blocked,
         codex_state::ThreadGoalStatus::UsageLimited => ThreadGoalStatus::UsageLimited,

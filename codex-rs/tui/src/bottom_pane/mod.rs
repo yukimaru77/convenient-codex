@@ -556,6 +556,11 @@ impl BottomPane {
         self.request_redraw();
     }
 
+    pub(crate) fn set_monitor_status_indicator(&mut self, indicator: Option<Line<'static>>) {
+        self.composer.set_monitor_status_indicator(indicator);
+        self.request_redraw();
+    }
+
     pub fn set_ide_context_active(&mut self, active: bool) {
         self.composer.set_ide_context_active(active);
         self.request_redraw();

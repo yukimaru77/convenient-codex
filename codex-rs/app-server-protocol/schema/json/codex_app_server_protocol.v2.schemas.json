@@ -19128,6 +19128,7 @@
     "ThreadGoalStatus": {
       "enum": [
         "active",
+        "goalWait",
         "paused",
         "blocked",
         "usageLimited",
@@ -20414,6 +20415,29 @@
       "title": "ThreadMetadataUpdateResponse",
       "type": "object"
     },
+    "ThreadMonitor": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "intervalMinutes": {
+          "description": "Summary interval in minutes; null identifies monitor_realtime.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "description",
+        "id"
+      ],
+      "type": "object"
+    },
     "ThreadNameUpdatedNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -21604,6 +21628,13 @@
     },
     "ThreadSettings": {
       "properties": {
+        "activeEnvironmentId": {
+          "description": "The active execution environment id when a non-local environment has been selected (e.g. `\"docker:container\"` or `\"ssh:host\"`). `None` means the thread is running in the default local environment.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "activePermissionProfile": {
           "anyOf": [
             {

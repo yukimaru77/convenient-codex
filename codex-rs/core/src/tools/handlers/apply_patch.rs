@@ -391,9 +391,12 @@ impl ApplyPatchHandler {
 
         // Verify the parsed patch against the selected environment filesystem.
         let Some(turn_environment) = resolve_tool_environment(
+            &session,
+            turn.as_ref(),
             &step_context.environments,
             selected_environment_id.as_deref(),
-        )?
+        )
+        .await?
         else {
             return Err(FunctionCallError::RespondToModel(
                 "apply_patch is unavailable in this session".to_string(),

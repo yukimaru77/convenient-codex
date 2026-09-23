@@ -262,6 +262,7 @@ impl GoalToolExecutor {
                     codex_state::GoalAccountingMode::ActiveOrStopped
                 }
                 ThreadGoalStatus::Active
+                | ThreadGoalStatus::GoalWait
                 | ThreadGoalStatus::UsageLimited
                 | ThreadGoalStatus::BudgetLimited => unreachable!("status validated above"),
             },
@@ -501,6 +502,7 @@ pub(crate) fn protocol_goal_from_state(goal: codex_state::ThreadGoal) -> ThreadG
 fn protocol_status_from_state(status: codex_state::ThreadGoalStatus) -> ThreadGoalStatus {
     match status {
         codex_state::ThreadGoalStatus::Active => ThreadGoalStatus::Active,
+        codex_state::ThreadGoalStatus::GoalWait => ThreadGoalStatus::GoalWait,
         codex_state::ThreadGoalStatus::Paused => ThreadGoalStatus::Paused,
         codex_state::ThreadGoalStatus::Blocked => ThreadGoalStatus::Blocked,
         codex_state::ThreadGoalStatus::UsageLimited => ThreadGoalStatus::UsageLimited,
@@ -514,6 +516,7 @@ pub(crate) fn state_status_from_protocol(
 ) -> codex_state::ThreadGoalStatus {
     match status {
         ThreadGoalStatus::Active => codex_state::ThreadGoalStatus::Active,
+        ThreadGoalStatus::GoalWait => codex_state::ThreadGoalStatus::GoalWait,
         ThreadGoalStatus::Paused => codex_state::ThreadGoalStatus::Paused,
         ThreadGoalStatus::Blocked => codex_state::ThreadGoalStatus::Blocked,
         ThreadGoalStatus::UsageLimited => codex_state::ThreadGoalStatus::UsageLimited,

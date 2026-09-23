@@ -249,6 +249,12 @@ where
             }
 
             let accounting = runtime.accounting_state();
+            if let Err(err) = runtime
+                .wake_waiting_goal_for_turn(input.turn_id, input.turn_trigger)
+                .await
+            {
+                tracing::warn!("failed to wake waiting goal: {err}");
+            }
             accounting.start_turn(
                 input.turn_id,
                 input.collaboration_mode.mode,
@@ -359,6 +365,16 @@ where
                     },
                     |current| current.is_some(),
                 );
+            }
+            if let Err(err) = runtime
+                .record_goal_wait_at_turn_stop(
+                    turn_id,
+                    input.last_agent_message,
+                    input.active_monitor_count,
+                )
+                .await
+            {
+                tracing::warn!("failed to record goal waiting signal: {err}");
             }
             accounting.finish_turn(turn_id);
         })

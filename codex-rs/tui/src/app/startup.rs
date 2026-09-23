@@ -992,6 +992,10 @@ See the Codex keymap documentation for supported actions and examples."
 
         let mut listen_for_app_server_events = true;
         let mut reconnect = None;
+        let mut monitor_refresh = tokio::time::interval(Duration::from_secs(1));
+        monitor_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut monitor_request: Option<super::monitor_status::MonitorStatusRequest> = None;
+        let mut monitor_thread = None;
         let mut waiting_for_initial_session_configured = wait_for_initial_session_configured;
         let mut waiting_for_initial_session_header = true;
 
@@ -1067,6 +1071,17 @@ See the Codex keymap documentation for supported actions and examples."
                     Box::pin(app.finish_managed_worktree(*created)).await;
                     continue;
                 }
+                let current_monitor_thread =
+                    if !app.reconnect.offline && app.config.features.enabled(Feature::Monitor) {
+                        app.current_displayed_thread_id()
+                    } else {
+                        None
+                    };
+                if current_monitor_thread != monitor_thread {
+                    monitor_thread = current_monitor_thread;
+                    monitor_request = None;
+                    app.chat_widget.set_monitor_status(&[]);
+                }
                 if app.reconnect.offline && !app.reconnect.failed && reconnect.is_none() {
                     reconnect = Some(Box::pin(reconnect::reconnect(
                         app.app_server_target.clone(),
@@ -1098,6 +1113,22 @@ See the Codex keymap documentation for supported actions and examples."
                     .rate_limit_refresh_interval()
                     .and_then(|interval| app.rate_limit_refresh_state.poll_deadline(interval));
                 let control = select! {
+                    _ = monitor_refresh.tick(), if monitor_request.is_none() && monitor_thread.is_some() && !has_pending_app_events => {
+                        if let Some(thread_id) = monitor_thread {
+                            monitor_request = Some(super::monitor_status::request_monitor_status(app_server.request_handle(), thread_id));
+                        }
+                        AppRunControl::Continue
+                    }
+                    monitors = async {
+                        match monitor_request.as_mut() {
+                            Some(request) => request.await,
+                            None => std::future::pending().await,
+                        }
+                    }, if monitor_request.is_some() => {
+                        monitor_request = None;
+                        app.chat_widget.set_monitor_status(&monitors.unwrap_or_default());
+                        AppRunControl::Continue
+                    }
                     Some(event) = app_event_rx.recv() => {
                         let is_initial_session_header = matches!(
                             &event,

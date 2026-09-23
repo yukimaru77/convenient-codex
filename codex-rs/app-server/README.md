@@ -1,3 +1,22 @@
+# Convenient Codex extensions
+
+`thread/backgroundTerminals/list` also returns a `monitors` array, independent of
+the terminal list's pagination. Each item contains `id`, `description`, and
+`intervalMinutes` (a number for summary monitors, `null` for realtime monitors).
+The array represents live session processes, not persisted conversation history.
+
+The Goal status `goalWait` suspends automatic continuation after a completed
+assistant response containing `GOAL_WAIT`, provided that the same session has an
+active Monitor. A new external turn resumes only this waiting state. Merely
+having a Monitor does not pause an active Goal. Waiting survives database reload;
+Monitor processes and dynamic execution environments do not restart from history.
+
+`env_switch` selects a thread-scoped execution environment. Compatible command,
+patch, image, and new Monitor calls use it; explicit per-call environment IDs do
+not change the default. The TUI receives execution-environment selection events.
+
+See [the product specification](../../CUSTOM_CODEX_SPEC.md) for the full contract.
+
 # Model catalog provider requirements
 
 `model/list` and periodic model catalog refreshes check the startup provider against

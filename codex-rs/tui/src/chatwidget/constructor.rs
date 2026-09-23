@@ -144,6 +144,7 @@ impl ChatWidget {
             windows_sandbox_host: crate::app::WindowsSandboxHost::Unknown,
             #[cfg(any(target_os = "windows", test))]
             windows_sandbox_elevated_setup_complete: false,
+            env_switch_badge: None,
             token_info: None,
             token_usage_pending: false,
             rate_limit_snapshots_by_limit_id: BTreeMap::new(),

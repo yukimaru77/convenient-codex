@@ -17,4 +17,9 @@ export type ThreadSettings = {/**
 disabledPluginIds: Array<string>, cwd: AbsolutePathBuf, approvalPolicy: AskForApproval, approvalsReviewer: ApprovalsReviewer, sandboxPolicy: SandboxPolicy, activePermissionProfile: ActivePermissionProfile | null, model: string, modelProvider: string, serviceTier: string | null, effort: ReasoningEffort | null, summary: ReasoningSummary | null, collaborationMode: CollaborationMode, /**
  * @deprecated Reports the saved setting; `friendly` and `pragmatic` no longer select a style.
  */
-personality: Personality | null};
+personality: Personality | null, /**
+ * The active execution environment id when a non-local environment has
+ * been selected (e.g. `"docker:container"` or `"ssh:host"`).
+ * `None` means the thread is running in the default local environment.
+ */
+activeEnvironmentId: string | null};

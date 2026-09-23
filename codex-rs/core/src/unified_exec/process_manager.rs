@@ -508,7 +508,9 @@ impl UnifiedExecProcessManager {
         context: &UnifiedExecContext,
     ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
         let result = self
-            .exec_command_inner(request, context, /*completion*/ None)
+            .exec_command_inner(
+                request, context, /*completion*/ None, /*monitor_process*/ None,
+            )
             .await;
         let outcome = match &result {
             Ok(output) if output.process_id.is_some() => "yielded",
@@ -520,11 +522,32 @@ impl UnifiedExecProcessManager {
         result
     }
 
+    pub(crate) async fn exec_monitor_command(
+        &self,
+        request: ExecCommandRequest,
+        context: &UnifiedExecContext,
+    ) -> Result<(ExecCommandToolOutput, Arc<UnifiedExecProcess>), UnifiedExecError> {
+        let mut process = None;
+        let output = self
+            .exec_command_inner(
+                request,
+                context,
+                /*completion*/ None,
+                Some(&mut process),
+            )
+            .await?;
+        let process = process.ok_or_else(|| {
+            UnifiedExecError::process_failed("monitor process was not published".to_string())
+        })?;
+        Ok((output, process))
+    }
+
     pub(super) async fn exec_command_inner(
         &self,
         request: ExecCommandRequest,
         context: &UnifiedExecContext,
         mut completion: Option<&mut Completion<'_>>,
+        monitor_process: Option<&mut Option<Arc<UnifiedExecProcess>>>,
     ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
         let cwd = request.cwd.clone();
         let process = self
@@ -544,6 +567,9 @@ impl UnifiedExecProcessManager {
             permissions,
         } = attempt;
         let process = Arc::new(process);
+        if let Some(slot) = monitor_process {
+            *slot = Some(Arc::clone(&process));
+        }
         if let Some(completion) = completion.as_ref() {
             let _ = completion.process.set(Arc::clone(&process));
         }

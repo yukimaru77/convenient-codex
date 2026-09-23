@@ -334,6 +334,7 @@ use self::exec_state::command_execution_command_and_parsed;
 use self::exec_state::is_standard_tool_call;
 use self::exec_state::is_unified_exec_source;
 mod goal_status;
+mod monitor_status;
 use self::goal_status::GoalStatusState;
 #[cfg(test)]
 use self::goal_status::goal_status_indicator_from_app_goal;
@@ -611,6 +612,24 @@ pub(crate) struct ChatWidget {
     pub(crate) windows_sandbox_host: crate::app::WindowsSandboxHost,
     #[cfg(any(target_os = "windows", test))]
     pub(crate) windows_sandbox_elevated_setup_complete: bool,
+    /// Status-badge text shown in the status line when the thread's execution
+    /// environment has been switched via `env_switch`.  `None` means the thread
+    /// is running locally and no badge is displayed.
+    /// Example values: `"🐳 env-remote-test"`, `"🔗 example-host"`.
+    ///
+    /// # Derived-state rationale
+    ///
+    /// This field is a pre-formatted derivative of `ThreadSettings::active_environment_id`.
+    /// It is cached here as a `String` rather than recomputed at every render frame because
+    /// `status_line_value_for_item` is `&mut self` (not a pure render path) and the badge
+    /// conversion is cheap but string-allocating.
+    ///
+    /// **Single sync point**: this field MUST only be written in
+    /// `apply_thread_settings`, which is the sole handler for
+    /// `ThreadSettingsUpdatedNotification`.  Any future code path that updates
+    /// `active_environment_id` outside that notification MUST also update this
+    /// field in the same place to avoid stale-badge display.
+    pub(crate) env_switch_badge: Option<String>,
     token_info: Option<TokenUsageInfo>,
     token_usage_pending: bool,
     // Status and polling use account usage reads; response streams may identify meters differently.

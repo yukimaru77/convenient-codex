@@ -627,6 +627,7 @@ mod tests {
                     active_permission_profile: None,
                     cwd: cwd.clone().try_into().expect("absolute settings cwd"),
                     runtime_workspace_roots: None,
+                    active_environment_id: None,
                     reasoning_effort: Some(ReasoningEffort::Ultra),
                     reasoning_summary: Some(ReasoningSummary::Auto),
                     personality: None,

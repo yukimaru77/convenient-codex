@@ -142,8 +142,13 @@ impl ViewImageHandler {
             }
         };
 
-        let Some(turn_environment) =
-            resolve_tool_environment(&step_context.environments, environment_id.as_deref())?
+        let Some(turn_environment) = resolve_tool_environment(
+            &session,
+            turn.as_ref(),
+            &step_context.environments,
+            environment_id.as_deref(),
+        )
+        .await?
         else {
             return Err(FunctionCallError::RespondToModel(
                 "view_image is unavailable in this session".to_string(),

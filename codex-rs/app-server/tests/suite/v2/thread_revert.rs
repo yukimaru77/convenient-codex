@@ -490,10 +490,21 @@ async fn thread_revert_replaces_paginated_history_before_turn() -> Result<()> {
         .expect("third turn response request")
         .body_json::<serde_json::Value>()?["input"]
         .clone();
-    let model_input = serde_json::to_string(&model_input)?;
-    assert!(model_input.contains("first"));
-    assert!(!model_input.contains("second"));
-    assert!(model_input.contains("third"));
+    let has_user_message = |text: &str| {
+        model_input
+            .as_array()
+            .expect("model input items")
+            .iter()
+            .any(|item| {
+                item["type"] == "message"
+                    && item["role"] == "user"
+                    && item["content"]
+                        == serde_json::json!([{ "type": "input_text", "text": text }])
+            })
+    };
+    assert!(has_user_message("first"));
+    assert!(!has_user_message("second"), "model input: {model_input}");
+    assert!(has_user_message("third"));
     assert_eq!(
         turn_ids_from_cursor(
             &mut mcp,

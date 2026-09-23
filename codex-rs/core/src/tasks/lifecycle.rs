@@ -18,6 +18,7 @@ impl Session {
         phase: TurnStartPhase,
     ) {
         let collaboration_mode = turn_context.collaboration_mode();
+        let turn_trigger = turn_context.turn_metadata_state.current_turn_trigger();
         for contributor in self.services.extensions.turn_lifecycle_contributors() {
             if contributor.turn_start_phase(&self.services.thread_extension_data) != phase {
                 continue;
@@ -30,6 +31,7 @@ impl Session {
             contributor
                 .on_turn_start(codex_extension_api::TurnStartInput {
                     turn_id: turn_context.sub_id.as_str(),
+                    turn_trigger: turn_trigger.as_deref(),
                     collaboration_mode: &collaboration_mode,
                     token_usage_at_turn_start,
                     session_store: &self.services.session_extension_data,
@@ -40,10 +42,17 @@ impl Session {
         }
     }
 
-    pub(super) async fn emit_turn_stop_lifecycle(&self, turn_store: &ExtensionData) {
+    pub(super) async fn emit_turn_stop_lifecycle(
+        &self,
+        turn_store: &ExtensionData,
+        last_agent_message: Option<&str>,
+    ) {
+        let active_monitor_count = self.services.monitor_manager.list().await.len();
         for contributor in self.services.extensions.turn_lifecycle_contributors() {
             contributor
                 .on_turn_stop(codex_extension_api::TurnStopInput {
+                    last_agent_message,
+                    active_monitor_count,
                     session_store: &self.services.session_extension_data,
                     thread_store: &self.services.thread_extension_data,
                     turn_store,

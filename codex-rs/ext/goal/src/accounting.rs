@@ -46,6 +46,7 @@ struct GoalTurnAccounting {
     successful_tool: bool,
     empty_final: bool,
     has_activity: bool,
+    goal_wait_requested: bool,
 }
 
 #[derive(Debug)]
@@ -167,12 +168,19 @@ impl GoalAccountingState {
         };
         match item {
             TurnItem::AgentMessage(message) => {
-                let has_text = message.content.iter().any(|content| match content {
-                    AgentMessageContent::Text { text } => !text.trim().is_empty(),
-                });
+                let text = message
+                    .content
+                    .iter()
+                    .map(|content| match content {
+                        AgentMessageContent::Text { text } => text.as_str(),
+                    })
+                    .collect::<String>();
+                let has_text = !text.trim().is_empty();
                 turn.has_activity |= has_text || message.questions.is_some();
                 turn.empty_final |=
                     !has_text && !matches!(message.phase, Some(MessagePhase::Commentary));
+                turn.goal_wait_requested = !matches!(message.phase, Some(MessagePhase::Commentary))
+                    && text.contains("GOAL_WAIT");
             }
             TurnItem::Reasoning(reasoning) => {
                 turn.has_activity |= reasoning
@@ -205,6 +213,15 @@ impl GoalAccountingState {
 
     pub(crate) fn mark_goal_continuation(&self, turn_id: String) {
         self.inner().automatic_goal_turn_id = Some(turn_id);
+    }
+
+    pub(crate) fn goal_wait_requested(&self, turn_id: &str) -> bool {
+        let inner = self.inner();
+        inner.current_turn_id.as_deref() == Some(turn_id)
+            && inner
+                .turns
+                .get(turn_id)
+                .is_some_and(|turn| turn.goal_wait_requested)
     }
 
     pub(crate) fn reset_empty_responses(&self) {
@@ -569,6 +586,7 @@ impl GoalTurnAccounting {
             successful_tool: false,
             empty_final: false,
             has_activity: false,
+            goal_wait_requested: false,
         }
     }
 
@@ -640,6 +658,7 @@ fn should_clear_active_goal(
             BudgetLimitedGoalDisposition::ClearActive
         ),
         ThreadGoalStatus::Paused
+        | ThreadGoalStatus::GoalWait
         | ThreadGoalStatus::Blocked
         | ThreadGoalStatus::UsageLimited
         | ThreadGoalStatus::Complete => true,

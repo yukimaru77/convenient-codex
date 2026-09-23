@@ -50,11 +50,21 @@ pub(crate) fn objective_updated_steering_item(goal: &ThreadGoal) -> ResponseItem
     goal_context_input_item(objective_updated_prompt(goal))
 }
 
+pub(crate) enum GoalContinuationReason {
+    Regular,
+    MissingMonitor,
+}
+
 pub(crate) fn continuation_steering_item(
     goal: &ThreadGoal,
     update_plan_enabled: bool,
+    reason: GoalContinuationReason,
 ) -> ResponseItem {
-    goal_context_input_item(continuation_prompt(goal, update_plan_enabled))
+    let mut prompt = continuation_prompt(goal, update_plan_enabled);
+    if matches!(reason, GoalContinuationReason::MissingMonitor) {
+        prompt.insert_str(0, "GOAL_WAIT was not accepted: there are no active Monitors in this session. The Goal remains active, and this turn is continuing it. Inspect any already delivered results and continue useful work. If necessary external work is still running, register a real finite Monitor to receive its result before waiting again. Do not create dummy watchers or restart existing work just to satisfy this condition.\n\n");
+    }
+    goal_context_input_item(prompt)
 }
 
 fn goal_context_input_item(prompt: String) -> ResponseItem {

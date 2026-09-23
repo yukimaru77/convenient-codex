@@ -16,15 +16,15 @@ Settings:
   text: {"verbosity":"low"}
   tool_choice: "auto"
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=175a24d9dd32c0c4):
-        - namespace/functions; hash=8c17932a39355f2d
+00:additional_tools/developer (3; hash=b95dec29d5f6969c):
+        - namespace/functions; hash=150948e196d2b1fa
           - custom/exec
           - function/wait
           - function/request_user_input
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=0be1d3f8e1f49dca
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=99b7328cac038bc3
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents

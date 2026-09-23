@@ -66,6 +66,8 @@ mod cyber_exec_policy;
 mod daybreak_access;
 mod deprecation_notice;
 mod direct_tool_metadata;
+mod env_status;
+mod env_switch_docker;
 mod exec;
 mod exec_policy;
 #[cfg(not(target_os = "windows"))]
@@ -133,6 +135,7 @@ mod model_visible_layout;
 mod models_cache_auth;
 mod models_cache_ttl;
 mod models_etag_responses;
+mod monitor;
 mod multi_agent_mode;
 mod multi_agent_resume;
 mod multi_agent_tool_descriptions;

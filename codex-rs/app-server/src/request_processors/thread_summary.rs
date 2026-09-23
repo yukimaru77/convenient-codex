@@ -175,6 +175,11 @@ pub(crate) fn thread_response_active_permission_profile(
 pub(crate) fn thread_settings_from_config_snapshot(
     config_snapshot: &ThreadConfigSnapshot,
 ) -> ThreadSettings {
+    let active_environment_id = config_snapshot
+        .environment_selections()
+        .first()
+        .map(|sel| sel.environment_id.clone())
+        .filter(|id| id != codex_exec_server::LOCAL_ENVIRONMENT_ID);
     ThreadSettings {
         disabled_plugin_ids: config_snapshot.disabled_plugin_ids.clone(),
         cwd: config_snapshot.cwd().clone(),
@@ -192,6 +197,7 @@ pub(crate) fn thread_settings_from_config_snapshot(
         collaboration_mode: config_snapshot.collaboration_mode.clone(),
         multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
         personality: config_snapshot.personality,
+        active_environment_id,
     }
 }
 
