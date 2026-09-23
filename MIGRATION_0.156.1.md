@@ -108,4 +108,38 @@ scenarios のうち 2 件は、テストの一時ホームを使っても実ホ�
 V8 は公式パッケージ処理と同じ `rusty-v8-v150.4.0` の sandbox 版を、公式の SHA-256 manifest で検証して
 `/Volumes/CodexBuild20260912/v8-cache` に置き、`RUSTY_V8_ARCHIVE` で指定した。
 
-<!-- 配布・導入の結果は導入後に追記する -->
+## 配布と版の識別
+
+Cargo と CLI の公式版番号は `0.156.1` を保つ。リモート環境の準備時に、この版の公式リリースを
+取得するためである。独自版は `0.156.1+convenient.1` として識別する。公式基点が変わったため
+配置先は前回と重ならず、独自改訂は `1` のままにした。
+
+### 導入した版と最終確認
+
+**通常の `codex` コマンドを `0.156.1+convenient.1` に切替済み。**
+ビルド対象のソースコミットは `282ef077f9fd498e019645d85df63e97467db924`。
+未コミット変更のない状態で、この SHA を `STABLE_GIT_COMMIT` として指定した。
+公式のパッケージ作成処理で CLI と code-mode-host を release profile（thin LTO）でビルドし、
+33 分 33 秒で成功した。release でだけ出る警告 3 件（`codex-app-server` と `codex-cloud-tasks` の
+`cfg(not(debug_assertions))` 部分）は、公式版から変更していないファイルのものだった。
+この節を含む導入記録の追記は、その後の文書だけのコミットである。
+
+- パッケージ: `~/.local/share/convenient-codex/releases/0.156.1+convenient.1`
+- 選択先: `~/.local/share/convenient-codex/current`
+- 起動コマンド: `~/.local/bin/codex` / `~/.local/bin/convenient-codex`
+- 旧版: `releases/0.155.1+convenient.1` を残した。`current` をこちらへ戻せば切り戻せる
+- 製品 metadata、ソース SHA、`source_dirty = false`、4 個の実行ファイルの SHA-256 と
+  macOS コード署名を検証。
+- bash / zsh の新規 login shell で `command -v codex` が上記ランチャーを指すことを確認。
+- `codex --version` は `codex-cli 0.156.1`。features は `env_switch`・`monitor`・`goals` が
+  すべて `true`。既存のログイン状態を維持。
+- 同梱の code-mode-host の起動と、一時的な CODEX_HOME での app-server の `initialize` 応答と
+  正常終了を確認。
+- 実モデルを使ったローカルの `codex exec`（`--ephemeral`、一時ディレクトリ）で、`env_status`・
+  `monitor` の開始・一覧・停止、`exec_command`、`apply_patch` が順に動き、独自ツールの定義が
+  API に受け付けられることを確認した。
+
+導入時点で旧版 0.155.1 の codex セッションが 5 個動いていた。これらは旧版のリリース
+ディレクトリを絶対パスで実行しているため、切替の影響を受けない。新しく起動する CLI から新版になる。
+
+前回と同じく、配布経路は Cargo ビルド。
