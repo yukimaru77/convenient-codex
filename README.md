@@ -10,6 +10,7 @@
 | 即時の監視 | `monitor_realtime` で即時性が必要な出力を通知する |
 | Goal の待機と復帰 | 最終応答の `GOAL_WAIT` と同じセッションの Monitor により待機し、新しいユーザー入力や監視通知で再開する |
 | 状況表示 | TUI に実行環境、監視件数・周期、Goal 状態を表示する |
+| **音声会話** | **`/voice` 用の `codex-voice-host` と pinned GStreamer／GLib runtime を macOS ARM64 package に同梱する** |
 
 Monitor があるだけでは Goal を止めません。Goal の継続プロンプトは、研究成果を縮小せず、有用な作業を進め、結果待ちだけになったら休む方針です。細部・制約・受け入れ条件は [製品仕様](CUSTOM_CODEX_SPEC.md) にまとめています。
 
@@ -18,7 +19,7 @@ Monitor があるだけでは Goal を止めません。Goal の継続プロン�
 | 項目 | 値 |
 | --- | --- |
 | 製品名 | `convenient-codex`（便利な Codex） |
-| 独自改訂 | `1` |
+| 独自改訂 | `2` |
 | 公式基点 | [`rust-v0.159.2`](https://github.com/openai/codex/releases/tag/rust-v0.159.2) |
 | 公式コミット | `ff6aec96948b70d94983af2641a6b67c94faeff5` |
 | 旧版の保存 | `archive/custom-0.153.4` — `824932436f78444f0376045c62b68f105391d877` |
@@ -52,7 +53,9 @@ python3.12 scripts/convenient-install.py \
 
 配布用には変更をコミットしてからビルドします。`STABLE_GIT_COMMIT` は upstream の仕組みで実行ファイルにもコミットを記録する指定です。
 
-既定の配布先は `~/.local/share/convenient-codex/releases/0.159.2+convenient.1`、選択中の版は `~/.local/share/convenient-codex/current` です。`~/.local/bin/convenient-codex` から選択中の版を起動します。導入時の `build-info.json` に製品 manifest、導入した checkout の Git コミット、未コミット変更の有無、バイナリの SHA-256 を残し、ランチャーの `--build-info` で表示します。
+既定の配布先は `~/.local/share/convenient-codex/releases/0.159.2+convenient.2`、選択中の版は `~/.local/share/convenient-codex/current` です。`~/.local/bin/convenient-codex` から選択中の版を起動します。導入時の `build-info.json` に製品 manifest、導入した checkout の Git コミット、未コミット変更の有無、バイナリの SHA-256 を残し、ランチャーの `--build-info` で表示します。
+
+macOS ARM64 の音声 helper は、公式の pinned native recipe を使って `bazel build //third_party/voice:native_prefix` と `bazel build //third_party/voice:native_runtime` を実行し、`third_party/voice/assemble_package.py` で package に追加します。helper は package 内の `@loader_path/../lib` へリンクを固定し、runtime の `Hello`・`InitializeRuntime`・`Close` を検証してから導入します。音声 runtime の生成物はホストの Homebrew ライブラリを実行時に参照しません。
 
 普段の `codex` コマンドにも使う場合は、導入コマンドに `--set-default` を付けます。これは `~/.local/bin/codex` に同じランチャーを作る指定で、PATH は変更しません。シェルの設定で `~/.local/bin` を npm の実行先より前に登録し、現在のシェルでは次のように確認します。
 
@@ -64,7 +67,7 @@ codex --build-info
 codex --version
 ```
 
-`command -v codex` が `~/.local/bin/codex` を指し、`--build-info` の `product.name` が `convenient-codex`、`installation.version` が `0.159.2+convenient.1` なら、この版のランチャーを使っています。`--version` は `codex-cli 0.159.2` と表示します。`--build-info` は専用ランチャーの引数で、パッケージ内の `bin/codex` を直接実行する場合には使えません。
+`command -v codex` が `~/.local/bin/codex` を指し、`--build-info` の `product.name` が `convenient-codex`、`installation.version` が `0.159.2+convenient.2` なら、この版のランチャーを使っています。`--version` は `codex-cli 0.159.2` と表示します。`--build-info` は専用ランチャーの引数で、パッケージ内の `bin/codex` を直接実行する場合には使えません。
 
 既存の npm パッケージとその `codex` は残します。npm 版へ戻すときは PATH の順序を元に戻すか、専用インストーラーが作った `~/.local/bin/codex` だけを退避し、`hash -r` の後に `command -v codex` を確認します。元の npm 版は `"$(npm prefix -g)/bin/codex" --version` でも直接確認できます。`~/.local/bin/convenient-codex` と版別パッケージは、そのまま残して併用できます。
 

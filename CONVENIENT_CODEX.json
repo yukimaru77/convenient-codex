@@ -3,7 +3,7 @@
   "product": {
     "name": "convenient-codex",
     "display_name": "便利な Codex",
-    "patch_revision": 1
+    "patch_revision": 2
   },
   "upstream": {
     "repository": "openai/codex",
@@ -23,7 +23,8 @@
     "monitor_realtime",
     "goal_wait",
     "research_goal_continuation",
-    "execution_environment_and_monitor_status"
+    "execution_environment_and_monitor_status",
+    "voice_conversation"
   ],
   "versioning": {
     "cargo_version": "0.159.2",

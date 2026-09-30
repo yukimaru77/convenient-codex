@@ -9,7 +9,7 @@
 - 公式コミット（注釈付きタグの dereference 先）: `ff6aec96948b70d94983af2641a6b67c94faeff5`
 - 作業場所: `/Users/nonaka/src/convenient-codex-0.159.2`
 - ブランチ: `port/rust-v0.159.2`
-- 製品改訂: `0.159.2+convenient.1`
+- 製品改訂: `0.159.2+convenient.2`
 
 前の製品版 `0.156.1+convenient.1`（コミット `425a18e4e6d6bd63d23d50501886beb4a9e018a3`）から、公式の
 `rust-v0.159.2` をマージして移植した。旧版の全体は `archive/custom-0.153.4` に保存している。
@@ -21,27 +21,31 @@
 - `monitor` / `monitor_realtime`、要約監視・即時監視のライフサイクル、TUI 表示。
 - Goal の `goalWait`、待機状態の保存、Monitor があるだけでは Goal を停止しない継続条件。
 - app-server の Guardian 回路遮断、モデルカタログ要件、製品 manifest と専用インストーラー。
+- macOS ARM64 の `/voice`。`codex-voice-host` と pinned GStreamer／GLib runtime を package に同梱する。
 
 公式側で HTTP エラー型が統合されたため、旧版にあった重複したエラー変換を 1 箇所整理した。これは実行時の
 エラー種別を変えず、0.159.2 の共有型へ合わせるための互換修正である。
 
 ## 検証
 
-専用ビルド領域 `/Volumes/CodexBuild20260912` を使い、`codex-voice-host`（macOS の GStreamer 開発 SDK が
-別途必要なため）を除く workspace のコンパイル検査を実行し、通過した。独自機能の対象テストも次の結果になった。
+専用ビルド領域 `/Volumes/CodexBuild20260912` を使い、Homebrew の GStreamer 開発ファイルを導入したうえで
+`codex-voice-host` と pinned native runtime を生成した。独自機能の対象テストも次の結果になった。
 
 - `cargo check --workspace --tests --exclude codex-voice-host`: 成功（既存コード由来の警告のみ）。
 - `just test -p codex-core --lib monitor`: 9 件成功。
 - `just test -p codex-core --lib env_switch`: 51 件成功（既存テストの leaky 1 件を含む）。
 - `just test -p codex-goal-extension`: 41 件成功。
 - `cargo build -p codex-cli -p codex-code-mode-host`: dev profile で成功。
+- `bazel build //third_party/voice:native_prefix`: 成功（macOS ARM64、1,661 actions）。
+- `bazel build //third_party/voice:native_runtime`: 成功。
+- helper の `Hello` → `InitializeRuntime` → `Close`: 成功。package 外の Homebrew dylib 参照なし。
 
 ## 導入
 
-検証を通過したバイナリは、既存の認証・会話データを保持したまま、専用インストーラーで
-`~/.local/share/convenient-codex/releases/0.159.2+convenient.1` に配置し、`current` をこの版へ切り替えた。
+検証を通過したバイナリと音声 runtime は、既存の認証・会話データを保持したまま、
+`~/.local/share/convenient-codex/releases/0.159.2+convenient.2` に配置し、`current` をこの版へ切り替える。
 導入時の source commit はこの移行コミット、未コミット変更なしとして記録されている。
-`codex --build-info` は upstream `rust-v0.159.2`、製品版 `0.159.2+convenient.1`、全機能一覧を表示し、
+`codex --build-info` は upstream `rust-v0.159.2`、製品版 `0.159.2+convenient.2`、全機能一覧を表示し、
 `codex --version` は `codex-cli 0.159.2` になった。`codex-code-mode-host --help` と既存の ChatGPT ログイン状態
 （`Logged in using ChatGPT`）も確認した。`codex-pool` の既存ランチャーは保持し、current の新しいバイナリを使う状態にした。
 
