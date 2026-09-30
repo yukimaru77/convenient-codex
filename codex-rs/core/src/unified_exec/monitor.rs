@@ -249,7 +249,7 @@ async fn summary_delivery_loop(
         notified.as_mut().enable();
         let chunk = {
             let mut buffer = output.output_buffer.lock().await;
-            std::mem::take(&mut *buffer).to_bytes_with_omission_marker()
+            std::mem::take(&mut buffer.pending).to_bytes_with_omission_marker()
         };
         summary.extend(&chunk);
         if Instant::now() >= flush_at {
@@ -341,7 +341,7 @@ async fn delivery_loop(
         }
         chunk = {
             let mut buffer = output.output_buffer.lock().await;
-            std::mem::take(&mut *buffer).to_bytes_with_omission_marker()
+            std::mem::take(&mut buffer.pending).to_bytes_with_omission_marker()
         };
         if !chunk.is_empty() {
             continue;

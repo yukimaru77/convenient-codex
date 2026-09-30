@@ -82,6 +82,7 @@ pub use new_context_window::NewContextWindowHandler;
 pub use plan::PlanHandler;
 pub(crate) use remote_command_advisory::RemoteCommandAdvisoryOptions;
 pub(crate) use remote_command_advisory::remote_command_advisory;
+pub(crate) use request_permissions::RequestPermissionsEnvironmentArgs;
 pub use request_permissions::RequestPermissionsHandler;
 pub use request_plugin_install::RequestPluginInstallHandler;
 pub use request_user_input::RequestUserInputHandler;

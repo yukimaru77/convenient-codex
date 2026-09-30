@@ -19,7 +19,7 @@ use crate::CapabilityRootsDiscoverResponse;
 use crate::EnvironmentConfigReadParams;
 use crate::EnvironmentConfigReadResponse;
 use crate::ExecServerError;
-use crate::ExecServerRuntimePaths;
+use crate::ExecServerRuntimeOptions;
 use crate::ExecutorFileSystem;
 use crate::HttpClient;
 use crate::NoiseChannelIdentity;
@@ -135,7 +135,7 @@ pub struct EnvironmentManager {
     default_environment: Option<String>,
     pub(super) environments: RwLock<HashMap<String, Arc<Environment>>>,
     local_environment: Option<Arc<Environment>>,
-    local_runtime_paths: Option<ExecServerRuntimePaths>,
+    local_runtime_paths: Option<ExecServerRuntimeOptions>,
     http_client_factory: HttpClientFactory,
     /// Per-environment metadata (cwd, shell) registered by `env_switch`.
     ///
@@ -249,7 +249,7 @@ impl EnvironmentManager {
     /// Builds a test-only manager from a raw exec-server URL value.
     pub async fn create_for_tests(
         exec_server_url: Option<String>,
-        local_runtime_paths: Option<ExecServerRuntimePaths>,
+        local_runtime_paths: Option<ExecServerRuntimeOptions>,
     ) -> Self {
         let provider = DefaultEnvironmentProvider::new(exec_server_url);
         match Self::from_snapshot(
@@ -283,7 +283,7 @@ impl EnvironmentManager {
     /// Builds a manager from `CODEX_HOME` with an explicit outbound HTTP policy.
     pub async fn from_codex_home(
         codex_home: impl AsRef<std::path::Path>,
-        local_runtime_paths: Option<ExecServerRuntimePaths>,
+        local_runtime_paths: Option<ExecServerRuntimeOptions>,
         http_client_factory: HttpClientFactory,
     ) -> Result<Self, ExecServerError> {
         Self::prepare_from_codex_home(codex_home)
@@ -304,7 +304,7 @@ impl EnvironmentManager {
 
     /// Builds a manager from environment variables with an explicit outbound HTTP policy.
     pub async fn from_env(
-        local_runtime_paths: Option<ExecServerRuntimePaths>,
+        local_runtime_paths: Option<ExecServerRuntimeOptions>,
         http_client_factory: HttpClientFactory,
     ) -> Result<Self, ExecServerError> {
         Self::prepare_from_env()
@@ -314,7 +314,7 @@ impl EnvironmentManager {
 
     pub(crate) fn from_noise_environment_config(
         config: NoiseRendezvousEnvironmentConfig,
-        local_runtime_paths: Option<ExecServerRuntimePaths>,
+        local_runtime_paths: Option<ExecServerRuntimeOptions>,
         http_client_factory: HttpClientFactory,
     ) -> Result<Self, ExecServerError> {
         let connect_provider = config.into_connect_provider(http_client_factory.clone())?;
@@ -347,7 +347,7 @@ impl EnvironmentManager {
     /// allowing tests to select the local environment explicitly.
     pub async fn create_for_tests_with_local(
         exec_server_url: Option<String>,
-        local_runtime_paths: ExecServerRuntimePaths,
+        local_runtime_paths: ExecServerRuntimeOptions,
     ) -> Self {
         let mut snapshot = DefaultEnvironmentProvider::new(exec_server_url).snapshot_inner();
         snapshot.include_local = true;
@@ -364,7 +364,7 @@ impl EnvironmentManager {
 
     pub(crate) fn from_snapshot(
         snapshot: EnvironmentProviderSnapshot,
-        local_runtime_paths: Option<ExecServerRuntimePaths>,
+        local_runtime_paths: Option<ExecServerRuntimeOptions>,
         http_client_factory: HttpClientFactory,
     ) -> Result<Self, ExecServerError> {
         let EnvironmentProviderSnapshot {
@@ -1046,7 +1046,7 @@ pub struct Environment {
     exec_backend: Arc<dyn ExecBackend>,
     filesystem: Arc<dyn ExecutorFileSystem>,
     http_client: Arc<dyn HttpClient>,
-    local_runtime_paths: Option<ExecServerRuntimePaths>,
+    local_runtime_paths: Option<ExecServerRuntimeOptions>,
 }
 
 impl Environment {
@@ -1078,7 +1078,7 @@ impl Environment {
     /// Builds an environment using the caller's effective outbound HTTP policy.
     pub fn create(
         exec_server_url: Option<String>,
-        local_runtime_paths: ExecServerRuntimePaths,
+        local_runtime_paths: ExecServerRuntimeOptions,
         http_client_factory: HttpClientFactory,
     ) -> Result<Self, ExecServerError> {
         Self::create_inner(
@@ -1101,7 +1101,7 @@ impl Environment {
     /// local runtime paths used when creating local filesystem helpers.
     fn create_inner(
         exec_server_url: Option<String>,
-        local_runtime_paths: Option<ExecServerRuntimePaths>,
+        local_runtime_paths: Option<ExecServerRuntimeOptions>,
         http_client_factory: HttpClientFactory,
     ) -> Result<Self, ExecServerError> {
         let (exec_server_url, disabled) = normalize_exec_server_url(exec_server_url);
@@ -1128,7 +1128,7 @@ impl Environment {
     }
 
     pub(crate) fn local(
-        local_runtime_paths: ExecServerRuntimePaths,
+        local_runtime_paths: ExecServerRuntimeOptions,
         http_client_factory: HttpClientFactory,
     ) -> Self {
         Self {
@@ -1149,7 +1149,7 @@ impl Environment {
 
     pub(crate) fn remote_with_transport(
         remote_transport: ExecServerTransportParams,
-        local_runtime_paths: Option<ExecServerRuntimePaths>,
+        local_runtime_paths: Option<ExecServerRuntimeOptions>,
         http_client_factory: HttpClientFactory,
     ) -> Self {
         let client = LazyRemoteExecServerClient::new(remote_transport, http_client_factory);
@@ -1158,7 +1158,7 @@ impl Environment {
 
     pub(crate) fn remote_with_client(
         client: LazyRemoteExecServerClient,
-        local_runtime_paths: Option<ExecServerRuntimePaths>,
+        local_runtime_paths: Option<ExecServerRuntimeOptions>,
     ) -> Self {
         let exec_backend: Arc<dyn ExecBackend> = Arc::new(RemoteProcess::new(client.clone()));
         let filesystem: Arc<dyn ExecutorFileSystem> =
@@ -1261,7 +1261,7 @@ impl Environment {
             .map(LazyRemoteExecServerClient::subscribe_connection_state)
     }
 
-    pub fn local_runtime_paths(&self) -> Option<&ExecServerRuntimePaths> {
+    pub fn local_runtime_paths(&self) -> Option<&ExecServerRuntimeOptions> {
         self.local_runtime_paths.as_ref()
     }
 
@@ -1392,19 +1392,28 @@ impl Environment {
                         tracing::warn!(%error, "replaying capability discovery after executor recovery");
                         let recovered =
                             tokio::time::timeout(std::time::Duration::from_secs(8), async {
-                                while self.readiness_result().is_none_or(|result| result.is_err()) {
+                                loop {
+                                    match self.readiness_result() {
+                                        Some(Ok(())) => return Some(Ok(())),
+                                        Some(Err(error))
+                                            if !crate::client::is_retryable_recovery_error(
+                                                &error,
+                                            ) =>
+                                        {
+                                            return Some(Err(error));
+                                        }
+                                        Some(Err(_)) | None => {}
+                                    }
                                     if connection_state.changed().await.is_err() {
-                                        return false;
+                                        return None;
                                     }
                                 }
-                                true
                             })
-                            .await
-                            .unwrap_or(false);
-                        if recovered {
-                            discover().await
-                        } else {
-                            Err(error)
+                            .await;
+                        match recovered {
+                            Ok(Some(Ok(()))) => discover().await,
+                            Ok(Some(Err(error))) => Err(error),
+                            Ok(None) | Err(_) => Err(error),
                         }
                     }
                     response => response,
@@ -1534,7 +1543,7 @@ mod tests {
     use super::LOCAL_ENVIRONMENT_ID;
     use super::REMOTE_ENVIRONMENT_ID;
     use super::noise_environment_config_from_values;
-    use crate::ExecServerRuntimePaths;
+    use crate::ExecServerRuntimeOptions;
     use crate::ProcessId;
     use crate::client_api::DEFAULT_REMOTE_EXEC_SERVER_CONNECT_TIMEOUT;
     use crate::client_api::ExecServerTransportParams;
@@ -1559,8 +1568,8 @@ mod tests {
         )
     }
 
-    fn test_runtime_paths() -> ExecServerRuntimePaths {
-        ExecServerRuntimePaths::new(
+    fn test_runtime_paths() -> ExecServerRuntimeOptions {
+        ExecServerRuntimeOptions::new(
             std::env::current_exe().expect("current exe"),
             /*codex_linux_sandbox_exe*/ None,
         )

@@ -19,14 +19,14 @@ Monitor があるだけでは Goal を止めません。Goal の継続プロン�
 | --- | --- |
 | 製品名 | `convenient-codex`（便利な Codex） |
 | 独自改訂 | `1` |
-| 公式基点 | [`rust-v0.156.1`](https://github.com/openai/codex/releases/tag/rust-v0.156.1) |
-| 公式コミット | `b412ff32c417f855c2b2d1581b77058eed87c84b` |
+| 公式基点 | [`rust-v0.159.2`](https://github.com/openai/codex/releases/tag/rust-v0.159.2) |
+| 公式コミット | `ff6aec96948b70d94983af2641a6b67c94faeff5` |
 | 旧版の保存 | `archive/custom-0.153.4` — `824932436f78444f0376045c62b68f105391d877` |
-| 移植の確認状況 | ビルド・テスト・導入の結果は [移行記録](MIGRATION_0.156.1.md) に記録する |
+| 移植の確認状況 | ビルド・テスト・導入の結果は [移行記録](MIGRATION_0.159.2.md) に記録する |
 
 [CONVENIENT_CODEX.json](CONVENIENT_CODEX.json) が、製品名・独自改訂・公式タグとコミット・移植元を記録する機械可読の識別情報です。ソースの変更を特定するときは、この情報と Git コミットを使います。
 
-**Cargo のパッケージ版と `codex --version` は、意図的に公式の `0.156.1` を維持します。** `env_switch` がリモート用バイナリを準備するときに、この版から公式リリースを選ぶためです。独自改訂は JSON で別管理し、存在しない独自リリースを取得しに行かないようにします。`--version` だけでは改造版と公式版を区別できません。
+**Cargo のパッケージ版と `codex --version` は、意図的に公式の `0.159.2` を維持します。** `env_switch` がリモート用バイナリを準備するときに、この版から公式リリースを選ぶためです。独自改訂は JSON で別管理し、存在しない独自リリースを取得しに行かないようにします。`--version` だけでは改造版と公式版を区別できません。
 
 ## この checkout からビルド・導入する
 
@@ -52,7 +52,7 @@ python3.12 scripts/convenient-install.py \
 
 配布用には変更をコミットしてからビルドします。`STABLE_GIT_COMMIT` は upstream の仕組みで実行ファイルにもコミットを記録する指定です。
 
-既定の配布先は `~/.local/share/convenient-codex/releases/0.156.1+convenient.1`、選択中の版は `~/.local/share/convenient-codex/current` です。`~/.local/bin/convenient-codex` から選択中の版を起動します。導入時の `build-info.json` に製品 manifest、導入した checkout の Git コミット、未コミット変更の有無、バイナリの SHA-256 を残し、ランチャーの `--build-info` で表示します。
+既定の配布先は `~/.local/share/convenient-codex/releases/0.159.2+convenient.1`、選択中の版は `~/.local/share/convenient-codex/current` です。`~/.local/bin/convenient-codex` から選択中の版を起動します。導入時の `build-info.json` に製品 manifest、導入した checkout の Git コミット、未コミット変更の有無、バイナリの SHA-256 を残し、ランチャーの `--build-info` で表示します。
 
 普段の `codex` コマンドにも使う場合は、導入コマンドに `--set-default` を付けます。これは `~/.local/bin/codex` に同じランチャーを作る指定で、PATH は変更しません。シェルの設定で `~/.local/bin` を npm の実行先より前に登録し、現在のシェルでは次のように確認します。
 
@@ -64,7 +64,7 @@ codex --build-info
 codex --version
 ```
 
-`command -v codex` が `~/.local/bin/codex` を指し、`--build-info` の `product.name` が `convenient-codex`、`installation.version` が `0.156.1+convenient.1` なら、この版のランチャーを使っています。`--version` は `codex-cli 0.156.1` と表示します。`--build-info` は専用ランチャーの引数で、パッケージ内の `bin/codex` を直接実行する場合には使えません。
+`command -v codex` が `~/.local/bin/codex` を指し、`--build-info` の `product.name` が `convenient-codex`、`installation.version` が `0.159.2+convenient.1` なら、この版のランチャーを使っています。`--version` は `codex-cli 0.159.2` と表示します。`--build-info` は専用ランチャーの引数で、パッケージ内の `bin/codex` を直接実行する場合には使えません。
 
 既存の npm パッケージとその `codex` は残します。npm 版へ戻すときは PATH の順序を元に戻すか、専用インストーラーが作った `~/.local/bin/codex` だけを退避し、`hash -r` の後に `command -v codex` を確認します。元の npm 版は `"$(npm prefix -g)/bin/codex" --version` でも直接確認できます。`~/.local/bin/convenient-codex` と版別パッケージは、そのまま残して併用できます。
 
@@ -78,7 +78,7 @@ env_switch = true
 monitor = true
 ```
 
-この版の導入検証の結果は [移行記録](MIGRATION_0.156.1.md) を参照してください。通常の `npm install -g @openai/codex`、Homebrew、OpenAI の installer は公式版を導入する手段です。この checkout の独自機能を配布するものではありません。デスクトップアプリ内蔵の実行ファイルも別です。
+この版の導入検証の結果は [移行記録](MIGRATION_0.159.2.md) を参照してください。通常の `npm install -g @openai/codex`、Homebrew、OpenAI の installer は公式版を導入する手段です。この checkout の独自機能を配布するものではありません。デスクトップアプリ内蔵の実行ファイルも別です。
 
 ## 公式の安定版との差を確認する
 

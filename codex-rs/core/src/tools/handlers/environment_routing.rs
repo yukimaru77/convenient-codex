@@ -248,19 +248,22 @@ pub(crate) async fn resolve_tool_environment(
         return Ok(Some(found.clone()));
     }
 
-    if let Some(starting) = environments
-        .starting()
+    // A captured environment may have completed setup since the snapshot was
+    // taken. Promote ready results before falling back to live registrations.
+    let refreshed = environments.refresh_readiness();
+    if let Some(found) = refreshed
+        .turn_environments()
         .find(|environment| environment.selection.environment_id == env_id)
     {
-        return match starting.resolved() {
-            Some(Ok(environment)) => Ok(Some(environment)),
-            Some(Err(err)) => Err(FunctionCallError::RespondToModel(format!(
-                "environment `{env_id}` failed to start: {err}"
-            ))),
-            None => Err(FunctionCallError::RespondToModel(format!(
-                "environment `{env_id}` is still starting; call wait_for_environment first"
-            ))),
-        };
+        return Ok(Some(found.clone()));
+    }
+    if refreshed
+        .starting()
+        .any(|environment| environment.selection.environment_id == env_id)
+    {
+        return Err(FunctionCallError::RespondToModel(format!(
+            "environment `{env_id}` is still starting; call wait_for_environment first"
+        )));
     }
 
     // Live fallback: look up through EnvironmentManager (for dynamically

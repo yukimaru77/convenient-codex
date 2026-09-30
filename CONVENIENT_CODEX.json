@@ -7,9 +7,9 @@
   },
   "upstream": {
     "repository": "openai/codex",
-    "tag": "rust-v0.156.1",
-    "version": "0.156.1",
-    "commit": "b412ff32c417f855c2b2d1581b77058eed87c84b"
+    "tag": "rust-v0.159.2",
+    "version": "0.159.2",
+    "commit": "ff6aec96948b70d94983af2641a6b67c94faeff5"
   },
   "provenance": {
     "archive_branch": "archive/custom-0.153.4",
@@ -26,7 +26,7 @@
     "execution_environment_and_monitor_status"
   ],
   "versioning": {
-    "cargo_version": "0.156.1",
+    "cargo_version": "0.159.2",
     "reason": "Keep the official release version for env_switch remote provisioning; identify the product and custom patch revision separately."
   }
 }
