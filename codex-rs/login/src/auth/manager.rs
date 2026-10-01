@@ -2040,7 +2040,8 @@ impl UnauthorizedRecovery {
 /// `reload()` is called explicitly. This matches the design goal of avoiding
 /// different parts of the program seeing inconsistent auth data mid‑run.
 pub struct AuthManager {
-    codex_home: PathBuf,
+    /// Directory holding auth storage. Switchable at turn boundaries by account rotation.
+    codex_home: RwLock<PathBuf>,
     inner: RwLock<CachedAuth>,
     auth_change_tx: watch::Sender<u64>,
     auth_change_state_tx: watch::Sender<AuthChangeState>,
@@ -2103,7 +2104,7 @@ pub struct AuthRuntimeConfig {
 impl Debug for AuthManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AuthManager")
-            .field("codex_home", &self.codex_home)
+            .field("codex_home", &self.auth_home())
             .field("inner", &self.inner)
             .field("enable_codex_api_key_env", &self.enable_codex_api_key_env)
             .field(
@@ -2197,7 +2198,7 @@ impl AuthManager {
             agent_identity_authapi_base_url(chatgpt_base_url.as_deref()).ok();
         let (auth_change_tx, _auth_change_rx) = watch::channel(0);
         Self {
-            codex_home,
+            codex_home: RwLock::new(codex_home),
             inner: RwLock::new(CachedAuth {
                 auth: managed_auth,
                 permanent_refresh_failure: None,
@@ -2236,7 +2237,7 @@ impl AuthManager {
         let (auth_change_tx, _auth_change_rx) = watch::channel(0);
 
         Arc::new(Self {
-            codex_home: PathBuf::from("non-existent"),
+            codex_home: RwLock::new(PathBuf::from("non-existent")),
             inner: RwLock::new(cached),
             auth_change_tx,
             auth_change_state_tx: watch::channel(AuthChangeState::default()).0,
@@ -2266,7 +2267,7 @@ impl AuthManager {
         };
         let (auth_change_tx, _auth_change_rx) = watch::channel(0);
         Arc::new(Self {
-            codex_home,
+            codex_home: RwLock::new(codex_home),
             inner: RwLock::new(cached),
             auth_change_tx,
             auth_change_state_tx: watch::channel(AuthChangeState::default()).0,
@@ -2300,7 +2301,7 @@ impl AuthManager {
         };
         let (auth_change_tx, _auth_change_rx) = watch::channel(0);
         Arc::new(Self {
-            codex_home: PathBuf::from("non-existent"),
+            codex_home: RwLock::new(PathBuf::from("non-existent")),
             inner: RwLock::new(cached),
             auth_change_tx,
             auth_change_state_tx: watch::channel(AuthChangeState::default()).0,
@@ -2329,7 +2330,7 @@ impl AuthManager {
     pub fn external_bearer_only(config: ModelProviderAuthInfo) -> Arc<Self> {
         let (auth_change_tx, _auth_change_rx) = watch::channel(0);
         Arc::new(Self {
-            codex_home: PathBuf::from("non-existent"),
+            codex_home: RwLock::new(PathBuf::from("non-existent")),
             inner: RwLock::new(CachedAuth {
                 auth: None,
                 permanent_refresh_failure: None,
@@ -2477,6 +2478,67 @@ impl AuthManager {
         .await
     }
 
+    /// Directory that auth is currently loaded from and persisted to.
+    pub fn auth_home(&self) -> PathBuf {
+        match self.codex_home.read() {
+            Ok(home) => home.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// Points auth storage at `codex_home` and reloads from it.
+    ///
+    /// Holds the refresh lock so an in-flight token refresh cannot persist into
+    /// the wrong directory. Returns whether the auth owner changed, which also
+    /// bumps `AuthChangeState::owner_generation`. Callers must only switch
+    /// between turns. External auth is never switched.
+    pub async fn switch_home(&self, codex_home: PathBuf) -> bool {
+        if self.has_external_auth() {
+            return false;
+        }
+        let Ok(_refresh_guard) = self.refresh_lock.acquire().await else {
+            return false;
+        };
+        let owner_generation_before = self.auth_change_state_tx.borrow().owner_generation;
+        match self.codex_home.write() {
+            Ok(mut home) => *home = codex_home,
+            Err(poisoned) => *poisoned.into_inner() = codex_home,
+        }
+        self.reload().await;
+        self.auth_change_state_tx.borrow().owner_generation != owner_generation_before
+    }
+
+    /// Loads auth stored under another home with this manager's login policy,
+    /// without touching the cached auth. A ChatGPT token that is due for
+    /// refresh is refreshed and persisted back into that home.
+    pub async fn load_auth_for_home(&self, codex_home: &Path) -> Option<CodexAuth> {
+        let auth = self.load_auth_from_home(codex_home).await?;
+        let CodexAuth::Chatgpt(chatgpt_auth) = &auth else {
+            return Some(auth);
+        };
+        if !Self::should_refresh_proactively(&auth) {
+            return Some(auth);
+        }
+        let token_data = chatgpt_auth.current_token_data()?;
+        match request_chatgpt_token_refresh(token_data.refresh_token, chatgpt_auth.client()).await {
+            Ok(refresh_response) => {
+                if let Err(err) = persist_tokens(
+                    chatgpt_auth.storage(),
+                    refresh_response.id_token,
+                    refresh_response.access_token,
+                    refresh_response.refresh_token,
+                ) {
+                    tracing::warn!("failed to persist refreshed auth for {codex_home:?}: {err}");
+                }
+                self.load_auth_from_home(codex_home).await
+            }
+            Err(err) => {
+                tracing::warn!("failed to refresh auth for {codex_home:?}: {err}");
+                Some(auth)
+            }
+        }
+    }
+
     /// Reloads auth from the active source. Returns whether the auth value changed.
     pub async fn reload(&self) -> bool {
         tracing::info!("Reloading auth");
@@ -2600,10 +2662,14 @@ impl AuthManager {
             };
         }
 
+        self.load_auth_from_home(&self.auth_home()).await
+    }
+
+    async fn load_auth_from_home(&self, codex_home: &Path) -> Option<CodexAuth> {
         let allowed_login_methods = self.allowed_login_methods();
         let effective_chatgpt_workspaces = self.effective_chatgpt_workspaces();
         load_auth(
-            &self.codex_home,
+            codex_home,
             self.enable_codex_api_key_env,
             self.auth_credentials_store_mode,
             Some(&allowed_login_methods),
@@ -2756,7 +2822,7 @@ impl AuthManager {
     /// Returns policy only; independent credential managers own their own state and lifecycle.
     pub fn runtime_config(&self) -> AuthRuntimeConfig {
         AuthRuntimeConfig {
-            codex_home: self.codex_home.clone(),
+            codex_home: self.auth_home(),
             auth_route_config: self.auth_route_config.clone(),
         }
     }
@@ -2946,7 +3012,7 @@ impl AuthManager {
     pub async fn logout(&self) -> std::io::Result<bool> {
         self.ensure_logout_allowed()?;
         let removed = logout_all_stores(
-            &self.codex_home,
+            &self.auth_home(),
             self.auth_credentials_store_mode,
             self.keyring_backend_kind,
         )?;
@@ -2966,7 +3032,7 @@ impl AuthManager {
             tracing::warn!("failed to revoke auth tokens during logout: {err}");
         }
         let result = logout_all_stores(
-            &self.codex_home,
+            &self.auth_home(),
             self.auth_credentials_store_mode,
             self.keyring_backend_kind,
         )?;
@@ -3061,7 +3127,7 @@ impl AuthManager {
             })?;
             // Independent AuthManagers share external ChatGPT auth through the process-local store.
             save_auth(
-                &self.codex_home,
+                &self.auth_home(),
                 &auth_dot_json,
                 AuthCredentialsStoreMode::Ephemeral,
                 AuthKeyringBackendKind::default(),

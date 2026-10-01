@@ -1,4 +1,5 @@
 // Aggregates all former standalone integration tests as modules.
+mod account_switch;
 mod auth_refresh;
 mod device_code_login;
 mod login_proxy_fallback;
