@@ -1,6 +1,8 @@
 use super::*;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_login::AuthKeyringBackendKind;
+use codex_protocol::error::UnexpectedResponseError;
+use codex_protocol::models::ReasoningItemReasoningSummary;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;
@@ -191,6 +193,105 @@ fn rotation_only_applies_to_sessions_that_own_their_turns() {
     assert!(!rotation_applies_to(&SessionSource::SubAgent(
         codex_protocol::protocol::SubAgentSource::Review
     )));
+}
+
+#[test]
+fn invalid_encrypted_content_errors_are_recognized() {
+    let http_body = r#"{"error":{"message":"The encrypted content for item rs_123 could not be verified.","type":"invalid_request_error","param":null,"code":"invalid_encrypted_content"}}"#;
+    assert!(is_invalid_encrypted_content_error(
+        &CodexErr::InvalidRequest(http_body.to_string())
+    ));
+    assert!(is_invalid_encrypted_content_error(&CodexErr::Stream(
+        "The encrypted content gAAA could not be decrypted or parsed.".to_string()
+    )));
+    assert!(is_invalid_encrypted_content_error(
+        &CodexErr::UnexpectedStatus(UnexpectedResponseError {
+            status: http::StatusCode::BAD_REQUEST,
+            body: http_body.to_string(),
+            url: None,
+            cf_ray: None,
+            request_id: None,
+            user_message: None,
+            identity_authorization_error: None,
+            identity_error_code: None,
+        })
+    ));
+    assert!(!is_invalid_encrypted_content_error(
+        &CodexErr::InvalidRequest("Model does not support image inputs".to_string())
+    ));
+    assert!(!is_invalid_encrypted_content_error(
+        &CodexErr::ContextWindowExceeded
+    ));
+}
+
+fn reasoning(blob: Option<&str>) -> ResponseItem {
+    ResponseItem::Reasoning {
+        id: None,
+        summary: vec![ReasoningItemReasoningSummary::SummaryText {
+            text: "thinking".to_string(),
+        }],
+        content: None,
+        encrypted_content: blob.map(str::to_string),
+        internal_chat_message_metadata_passthrough: None,
+    }
+}
+
+fn compaction(blob: &str) -> ResponseItem {
+    ResponseItem::Compaction {
+        id: None,
+        encrypted_content: blob.to_string(),
+        internal_chat_message_metadata_passthrough: None,
+    }
+}
+
+fn user(text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![codex_protocol::models::ContentItem::InputText {
+            text: text.to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    }
+}
+
+#[test]
+fn stripping_removes_only_rejected_encrypted_items() {
+    let rejected = vec![
+        user("hi"),
+        reasoning(Some("old-a")),
+        compaction("old-summary"),
+    ];
+    let hashes = encrypted_content_hashes(&rejected);
+    assert_eq!(hashes.len(), 2);
+
+    let mut items = vec![
+        compaction("old-summary"),
+        user("hi"),
+        reasoning(Some("old-a")),
+        reasoning(Some("new-b")),
+        reasoning(None),
+        ResponseItem::ContextCompaction {
+            id: None,
+            encrypted_content: Some("new-context".to_string()),
+            internal_chat_message_metadata_passthrough: None,
+        },
+    ];
+    assert_eq!(strip_encrypted_items(&mut items, &hashes), 2);
+    assert_eq!(
+        items,
+        vec![
+            user("hi"),
+            reasoning(Some("new-b")),
+            reasoning(None),
+            ResponseItem::ContextCompaction {
+                id: None,
+                encrypted_content: Some("new-context".to_string()),
+                internal_chat_message_metadata_passthrough: None,
+            },
+        ]
+    );
 }
 
 fn write_account(accounts: &Path, name: &str) -> PathBuf {

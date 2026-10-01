@@ -7,6 +7,9 @@
 //! mid-turn, and the rest of Codex reacts to the auth owner change on its own.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::hash::Hash;
+use std::hash::Hasher;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -20,6 +23,9 @@ use codex_backend_client::Client as BackendClient;
 use codex_config::types::AccountRotationConfig;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
+use codex_protocol::error::CodexErr;
+use codex_protocol::error::CodexErrorDetails;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::RateLimitWindow;
 use codex_protocol::protocol::SessionSource;
@@ -351,6 +357,69 @@ pub(crate) async fn maybe_rotate(
         "account rotation: switched account"
     );
     Some(switch)
+}
+
+/// Whether a request failed because encrypted reasoning or compaction content issued to a
+/// different account could not be decrypted.
+pub(crate) fn is_invalid_encrypted_content_error(err: &CodexErr) -> bool {
+    let text = match err.details() {
+        CodexErrorDetails::InvalidRequest(text) | CodexErrorDetails::Stream(text) => text.as_str(),
+        CodexErrorDetails::UnexpectedStatus(error) => error.body.as_str(),
+        _ => return false,
+    };
+    if text.contains("invalid_encrypted_content") {
+        return true;
+    }
+    let text = text.to_ascii_lowercase();
+    text.contains("encrypted content")
+        && [
+            "could not be verified",
+            "could not be decrypted",
+            "could not be parsed",
+        ]
+        .iter()
+        .any(|phrase| text.contains(phrase))
+}
+
+fn encrypted_blob(item: &ResponseItem) -> Option<&str> {
+    match item {
+        ResponseItem::Reasoning {
+            encrypted_content: Some(blob),
+            ..
+        }
+        | ResponseItem::Compaction {
+            encrypted_content: blob,
+            ..
+        }
+        | ResponseItem::ContextCompaction {
+            encrypted_content: Some(blob),
+            ..
+        } => Some(blob.as_str()),
+        _ => None,
+    }
+}
+
+fn blob_hash(blob: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    blob.hash(&mut hasher);
+    hasher.finish()
+}
+
+pub(crate) fn encrypted_content_hashes(items: &[ResponseItem]) -> HashSet<u64> {
+    items
+        .iter()
+        .filter_map(encrypted_blob)
+        .map(blob_hash)
+        .collect()
+}
+
+/// Removes reasoning and compaction items carrying one of `hashes`. A reasoning item cannot
+/// be replayed without its encrypted content when responses are not stored, so the whole
+/// item is dropped. Returns the number of removed items.
+pub(crate) fn strip_encrypted_items(items: &mut Vec<ResponseItem>, hashes: &HashSet<u64>) -> usize {
+    let before = items.len();
+    items.retain(|item| encrypted_blob(item).is_none_or(|blob| !hashes.contains(&blob_hash(blob))));
+    before - items.len()
 }
 
 #[cfg(test)]

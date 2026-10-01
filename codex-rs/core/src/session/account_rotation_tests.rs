@@ -74,3 +74,25 @@ async fn reset_rate_limits_clears_the_merged_snapshot() {
     state.reset_rate_limits();
     assert_eq!(state.latest_rate_limits, None);
 }
+
+#[tokio::test]
+async fn rejected_encrypted_content_is_stripped_from_later_prompts() {
+    use codex_protocol::models::ResponseItem;
+
+    let (session, _turn_context) = make_session_and_context().await;
+    let reasoning = |blob: &str| ResponseItem::Reasoning {
+        id: None,
+        summary: Vec::new(),
+        content: None,
+        encrypted_content: Some(blob.to_string()),
+        internal_chat_message_metadata_passthrough: None,
+    };
+    let mut prompt = vec![reasoning("from-old-account")];
+    session.strip_rejected_encrypted_content(&mut prompt).await;
+    assert_eq!(prompt.len(), 1);
+
+    assert_eq!(session.reject_encrypted_content(&prompt).await, 1);
+    let mut prompt = vec![reasoning("from-old-account"), reasoning("from-new-account")];
+    session.strip_rejected_encrypted_content(&mut prompt).await;
+    assert_eq!(prompt, vec![reasoning("from-new-account")]);
+}

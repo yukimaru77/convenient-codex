@@ -78,6 +78,8 @@ pub(crate) struct SessionState {
     pub(crate) latest_rate_limits: Option<RateLimitSnapshot>,
     /// Auth home that `latest_rate_limits` were observed under when account rotation is enabled.
     pub(crate) account_rotation_home: Option<std::path::PathBuf>,
+    /// Hashes of encrypted blobs the current account rejected; omitted from later prompts.
+    pub(crate) rejected_encrypted_content: HashSet<u64>,
     pub(crate) latest_token_usage_record: Option<TokenUsageRecord>,
     pub(crate) server_reasoning_included: bool,
     pub(crate) mcp_dependency_prompted: HashSet<String>,
@@ -130,6 +132,7 @@ impl SessionState {
             history_reset: CancellationToken::new(),
             latest_rate_limits: None,
             account_rotation_home: None,
+            rejected_encrypted_content: HashSet::new(),
             latest_token_usage_record: None,
             server_reasoning_included: false,
             mcp_dependency_prompted: HashSet::new(),

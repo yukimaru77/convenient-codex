@@ -2,15 +2,18 @@
 
 use chrono::DateTime;
 use chrono::Utc;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::WarningEvent;
 
 use super::session::Session;
 use crate::account_rotation::AccountSwitch;
+use crate::account_rotation::encrypted_content_hashes;
 use crate::account_rotation::mark_exhausted;
 use crate::account_rotation::maybe_rotate;
 use crate::account_rotation::rotation_applies_to;
+use crate::account_rotation::strip_encrypted_items;
 
 impl Session {
     /// Turn-boundary hook. A no-op unless `[account_rotation]` is configured.
@@ -57,6 +60,26 @@ impl Session {
     pub(crate) async fn note_usage_limit_reached(&self, resets_at: Option<DateTime<Utc>>) {
         if self.get_config().await.account_rotation.is_some() {
             mark_exhausted(&self.services.auth_manager.auth_home(), resets_at);
+        }
+    }
+
+    /// Remembers the encrypted blobs in `input` as rejected and reports how many were found.
+    pub(crate) async fn reject_encrypted_content(&self, input: &[ResponseItem]) -> usize {
+        let hashes = encrypted_content_hashes(input);
+        let count = hashes.len();
+        self.state
+            .lock()
+            .await
+            .rejected_encrypted_content
+            .extend(hashes);
+        count
+    }
+
+    /// Drops items whose encrypted blobs the current account previously rejected.
+    pub(crate) async fn strip_rejected_encrypted_content(&self, input: &mut Vec<ResponseItem>) {
+        let state = self.state.lock().await;
+        if !state.rejected_encrypted_content.is_empty() {
+            strip_encrypted_items(input, &state.rejected_encrypted_content);
         }
     }
 }

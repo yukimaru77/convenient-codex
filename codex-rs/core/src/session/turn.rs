@@ -1624,6 +1624,7 @@ async fn run_sampling_request(
     let mut initial_input = Some(input);
     let mut original_input = None;
     let mut executed_tool_calls_by_output = HashMap::new();
+    let mut retried_without_encrypted_content = false;
     loop {
         // Running code-mode cells can request review while this response is in flight.
         // Keep the latest received ID until response.created replaces it.
@@ -1635,6 +1636,7 @@ async fn run_sampling_request(
                 .for_prompt(&step_context.settings.model_info.input_modalities)
         };
         let mut prompt_input = prompt_input;
+        sess.strip_rejected_encrypted_content(&mut prompt_input).await;
         sess.services
             .executed_tool_calls
             .attach_to_prompt(&mut prompt_input, &mut executed_tool_calls_by_output);
@@ -1689,6 +1691,22 @@ async fn run_sampling_request(
         };
 
         let original_input = original_input.get_or_insert(prompt.input);
+
+        // Encrypted items issued to another account cannot be decrypted after a rotation.
+        if !retried_without_encrypted_content
+            && turn_context.config.account_rotation.is_some()
+            && crate::account_rotation::is_invalid_encrypted_content_error(&err)
+        {
+            retried_without_encrypted_content = true;
+            let rejected = sess.reject_encrypted_content(original_input).await;
+            warn!(
+                rejected,
+                "account rotation: retrying without encrypted content rejected by the current account: {err}"
+            );
+            if rejected > 0 {
+                continue;
+            }
+        }
 
         let retry = handle_response_stream_error(
             &mut retry_state,
