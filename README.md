@@ -100,6 +100,7 @@ GitHub の公式 latest release API と `CONVENIENT_CODEX.json` を比較し、�
 - **[便利な Codex の製品仕様](CUSTOM_CODEX_SPEC.md)** — 維持する機能、制約、更新時の受け入れ条件
 - [製品識別情報](CONVENIENT_CODEX.json)
 - [実行環境切替の移植元記録](ENV_SWITCH.md) / [Monitor の移植元記録](MONITOR.md) — 過去の版の検証記録を含む
+- [ターン境界のアカウント自動切替](ACCOUNT_ROTATION.md) — `[account_rotation]` の設定と動作
 - [公式 Codex ドキュメント](https://developers.openai.com/codex) / [認証](https://developers.openai.com/codex/auth)
 - [upstream の開発・貢献ガイド](docs/contributing.md)
 
