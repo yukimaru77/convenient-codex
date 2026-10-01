@@ -326,6 +326,7 @@ async fn new_config(
         agent_max_depth: 1,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
+        account_rotation: None,
         sqlite: SqliteConfig::from_sqlite_home(codex_home.clone()),
         log_dir: codex_home.join("log").to_path_buf(),
         codex_home,

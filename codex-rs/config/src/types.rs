@@ -292,6 +292,45 @@ pub struct ToolSuggestConfig {
 
 pub use codex_protocol::MemoryVersion;
 
+pub const DEFAULT_ACCOUNT_ROTATION_RESERVE_PERCENT: u8 = 10;
+pub const DEFAULT_ACCOUNT_ROTATION_USAGE_CACHE_SECONDS: u64 = 60;
+
+/// Turn-boundary ChatGPT account rotation settings loaded from config.toml.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct AccountRotationToml {
+    /// Directory whose subdirectories each hold one account's `auth.json`. Required to enable.
+    pub accounts_dir: Option<AbsolutePathBuf>,
+    /// Weekly remaining percentage at or below which an account is no longer used.
+    #[schemars(range(min = 0, max = 100))]
+    pub reserve_percent: Option<u8>,
+    /// How long a polled usage snapshot is reused for each account.
+    pub usage_cache_seconds: Option<u64>,
+}
+
+/// Effective account rotation settings; present only when `accounts_dir` is set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AccountRotationConfig {
+    pub accounts_dir: AbsolutePathBuf,
+    pub reserve_percent: u8,
+    pub usage_cache_seconds: u64,
+}
+
+impl AccountRotationConfig {
+    pub fn from_toml(toml: &AccountRotationToml) -> Option<Self> {
+        Some(Self {
+            accounts_dir: toml.accounts_dir.clone()?,
+            reserve_percent: toml
+                .reserve_percent
+                .unwrap_or(DEFAULT_ACCOUNT_ROTATION_RESERVE_PERCENT)
+                .min(100),
+            usage_cache_seconds: toml
+                .usage_cache_seconds
+                .unwrap_or(DEFAULT_ACCOUNT_ROTATION_USAGE_CACHE_SECONDS),
+        })
+    }
+}
+
 /// Memories settings loaded from config.toml.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]

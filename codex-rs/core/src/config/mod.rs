@@ -38,6 +38,7 @@ use codex_config::loader::project_trust_key;
 use codex_config::permissions_toml::PermissionProfileToml;
 use codex_config::permissions_toml::PermissionsToml;
 use codex_config::sandbox_mode_requirement_for_permission_profile;
+use codex_config::types::AccountRotationConfig;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_config::types::AuthKeyringBackendKind;
@@ -939,6 +940,9 @@ pub struct Config {
 
     /// Memories subsystem settings.
     pub memories: MemoriesConfig,
+
+    /// Turn-boundary account rotation; `None` keeps upstream single-account behaviour.
+    pub account_rotation: Option<AccountRotationConfig>,
 
     /// Directory containing all Codex state (defaults to `~/.codex` but can be
     /// overridden by the `CODEX_HOME` environment variable).
@@ -4363,6 +4367,10 @@ impl Config {
                 })
                 .transpose()?,
             memories: memories_config,
+            account_rotation: cfg
+                .account_rotation
+                .as_ref()
+                .and_then(AccountRotationConfig::from_toml),
             agent_interrupt_message_enabled,
             codex_home,
             sqlite: codex_state::SqliteConfig::from_sqlite_home(sqlite_home),

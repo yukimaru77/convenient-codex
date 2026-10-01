@@ -121,3 +121,38 @@ fn rendering_preferences_default_individually_and_ignore_animation_switch() {
         );
     }
 }
+
+#[test]
+fn account_rotation_requires_accounts_dir_and_applies_defaults() {
+    assert_eq!(
+        AccountRotationConfig::from_toml(&AccountRotationToml::default()),
+        None
+    );
+
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let toml: AccountRotationToml = toml::from_str(&format!(
+        "accounts_dir = {:?}\n",
+        tempdir.path().display().to_string()
+    ))
+    .expect("should deserialize account rotation config");
+    assert_eq!(
+        AccountRotationConfig::from_toml(&toml),
+        Some(AccountRotationConfig {
+            accounts_dir: AbsolutePathBuf::from_absolute_path(tempdir.path())
+                .expect("absolute path"),
+            reserve_percent: DEFAULT_ACCOUNT_ROTATION_RESERVE_PERCENT,
+            usage_cache_seconds: DEFAULT_ACCOUNT_ROTATION_USAGE_CACHE_SECONDS,
+        })
+    );
+
+    let toml: AccountRotationToml = toml::from_str(&format!(
+        "accounts_dir = {:?}\nreserve_percent = 250\nusage_cache_seconds = 5\n",
+        tempdir.path().display().to_string()
+    ))
+    .expect("should deserialize account rotation config");
+    let config = AccountRotationConfig::from_toml(&toml).expect("enabled");
+    assert_eq!(
+        (config.reserve_percent, config.usage_cache_seconds),
+        (100, 5)
+    );
+}

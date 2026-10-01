@@ -6,6 +6,34 @@
       "description": "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
       "type": "string"
     },
+    "AccountRotationToml": {
+      "additionalProperties": false,
+      "description": "Turn-boundary ChatGPT account rotation settings loaded from config.toml.",
+      "properties": {
+        "accounts_dir": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AbsolutePathBuf"
+            }
+          ],
+          "description": "Directory whose subdirectories each hold one account's `auth.json`. Required to enable."
+        },
+        "reserve_percent": {
+          "description": "Weekly remaining percentage at or below which an account is no longer used.",
+          "format": "uint8",
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "usage_cache_seconds": {
+          "description": "How long a polled usage snapshot is reused for each account.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "AgentRoleToml": {
       "additionalProperties": false,
       "properties": {
@@ -6559,6 +6587,14 @@
   },
   "description": "Base config deserialized from ~/.codex/config.toml.",
   "properties": {
+    "account_rotation": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/AccountRotationToml"
+        }
+      ],
+      "description": "Turn-boundary ChatGPT account rotation settings."
+    },
     "agents": {
       "allOf": [
         {

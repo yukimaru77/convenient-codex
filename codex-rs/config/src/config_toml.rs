@@ -19,6 +19,7 @@ use crate::types::History;
 use crate::types::MarketplaceConfig;
 use crate::types::McpEnterpriseManagedAuthConfig;
 use crate::types::McpServerConfig;
+use crate::types::AccountRotationToml;
 use crate::types::MemoriesToml;
 use crate::types::Notice;
 use crate::types::OAuthCredentialsStoreMode;
@@ -482,6 +483,9 @@ pub struct ConfigToml {
 
     /// Memories subsystem settings.
     pub memories: Option<MemoriesToml>,
+
+    /// Turn-boundary ChatGPT account rotation settings.
+    pub account_rotation: Option<AccountRotationToml>,
 
     /// User-level skill config entries keyed by SKILL.md path.
     pub skills: Option<SkillsConfig>,
