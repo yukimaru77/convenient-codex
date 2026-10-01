@@ -76,6 +76,8 @@ pub(crate) struct SessionState {
     /// Cancels work bound to discarded history or a superseded Guardian evidence policy.
     pub(crate) history_reset: CancellationToken,
     pub(crate) latest_rate_limits: Option<RateLimitSnapshot>,
+    /// Auth home that `latest_rate_limits` were observed under when account rotation is enabled.
+    pub(crate) account_rotation_home: Option<std::path::PathBuf>,
     pub(crate) latest_token_usage_record: Option<TokenUsageRecord>,
     pub(crate) server_reasoning_included: bool,
     pub(crate) mcp_dependency_prompted: HashSet<String>,
@@ -127,6 +129,7 @@ impl SessionState {
             history,
             history_reset: CancellationToken::new(),
             latest_rate_limits: None,
+            account_rotation_home: None,
             latest_token_usage_record: None,
             server_reasoning_included: false,
             mcp_dependency_prompted: HashSet::new(),
@@ -334,6 +337,11 @@ impl SessionState {
             self.latest_rate_limits.as_ref(),
             snapshot,
         ));
+    }
+
+    /// Forgets rate limits observed under a previous account.
+    pub(crate) fn reset_rate_limits(&mut self) {
+        self.latest_rate_limits = None;
     }
 
     pub(crate) fn token_info_and_rate_limits(

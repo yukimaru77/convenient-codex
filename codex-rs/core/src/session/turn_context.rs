@@ -1093,6 +1093,7 @@ impl Session {
         if let Some(service_tier) = service_tier_for_turn {
             Arc::make_mut(&mut configuration.step_settings).service_tier = Some(service_tier);
         }
+        Box::pin(self.maybe_rotate_account(&sub_id)).await;
         if !crate::guardian::is_basic_session_source(&configuration.session_source) {
             self.services
                 .models_manager

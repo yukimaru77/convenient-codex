@@ -1681,6 +1681,7 @@ async fn run_sampling_request(
                     if let Some(rate_limits) = rate_limits {
                         sess.update_rate_limits(&turn_context, *rate_limits).await;
                     }
+                    sess.note_usage_limit_reached(e.resets_at).await;
                     return Err(err);
                 }
                 _ => err,

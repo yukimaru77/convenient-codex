@@ -468,6 +468,7 @@ impl Session {
             Arc::clone(&active_turn.turn_state)
         };
 
+        Box::pin(self.maybe_rotate_account(&sub_id)).await;
         self.services
             .models_manager
             .refresh_after_auth_change(self.get_config().await.http_client_factory())
