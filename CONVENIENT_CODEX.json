@@ -3,7 +3,7 @@
   "product": {
     "name": "convenient-codex",
     "display_name": "便利な Codex",
-    "patch_revision": 3
+    "patch_revision": 4
   },
   "upstream": {
     "repository": "openai/codex",

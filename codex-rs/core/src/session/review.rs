@@ -191,6 +191,7 @@ pub(super) async fn spawn_review_thread(
         server_model_warning_emitted: AtomicBool::new(false),
         model_verification_emitted: AtomicBool::new(false),
         cyber_access_program: None,
+        account_rotation_guard: None,
     };
 
     // Seed the child task with the review prompt as the initial user message.

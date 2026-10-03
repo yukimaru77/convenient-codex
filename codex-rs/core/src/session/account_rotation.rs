@@ -14,6 +14,36 @@ use crate::account_rotation::mark_exhausted;
 use crate::account_rotation::maybe_rotate;
 use crate::account_rotation::rotation_applies_to;
 use crate::account_rotation::strip_encrypted_items;
+use std::sync::Arc;
+use std::sync::Weak;
+use tracing::info;
+
+/// Runs turn-end accounting on every exit path, including cancellation and errors.
+pub(crate) struct TurnEndGuard {
+    session: Weak<Session>,
+    sub_id: String,
+}
+
+impl Drop for TurnEndGuard {
+    fn drop(&mut self) {
+        let Some(session) = self.session.upgrade() else {
+            return;
+        };
+        let sub_id = self.sub_id.clone();
+        tokio::spawn(async move {
+            session.finish_turn_account_rotation(&sub_id).await;
+        });
+    }
+}
+
+impl Session {
+    pub(crate) fn turn_end_guard(self: &Arc<Self>, sub_id: &str) -> TurnEndGuard {
+        TurnEndGuard {
+            session: Arc::downgrade(self),
+            sub_id: sub_id.to_string(),
+        }
+    }
+}
 
 impl Session {
     /// Turn-boundary hook. A no-op unless `[account_rotation]` is configured.
@@ -34,6 +64,11 @@ impl Session {
             }
             state.latest_rate_limits.clone()
         };
+        info!(
+            sub_id = %sub_id,
+            account = %auth_manager.auth_home().display(),
+            "account rotation: turn start"
+        );
         let switch = maybe_rotate(
             rotation,
             auth_manager,
@@ -54,6 +89,39 @@ impl Session {
         })
         .await;
         Some(switch)
+    }
+
+    /// Checks the completed turn's latest limits and switches while no more requests from
+    /// that turn are pending. The next turn then starts with the selected account.
+    pub(crate) async fn finish_turn_account_rotation(&self, sub_id: &str) {
+        let config = self.get_config().await;
+        let Some(rotation) = config.account_rotation.as_ref() else {
+            return;
+        };
+        let latest = self.state.lock().await.latest_rate_limits.clone();
+        info!(
+            sub_id = %sub_id,
+            account = %self.services.auth_manager.auth_home().display(),
+            latest_snapshot = latest.is_some(),
+            "account rotation: turn end"
+        );
+        if let Some(switch) = maybe_rotate(
+            rotation,
+            &self.services.auth_manager,
+            latest.as_ref(),
+            &config.chatgpt_base_url,
+        )
+        .await
+        {
+            self.state.lock().await.reset_rate_limits();
+            self.send_event_raw(Event {
+                id: sub_id.to_string(),
+                msg: EventMsg::Warning(WarningEvent {
+                    message: switch.notice(),
+                }),
+            })
+            .await;
+        }
     }
 
     /// Records that the current account hit its usage limit so the next turn rotates.

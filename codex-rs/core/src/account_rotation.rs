@@ -14,6 +14,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -183,6 +185,22 @@ struct SharedState {
 static SHARED: LazyLock<Mutex<SharedState>> = LazyLock::new(Mutex::default);
 /// Serializes rotation decisions so concurrent sessions do not race each other's switch.
 static ROTATION_PERMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+static ACTIVE_TURNS: AtomicUsize = AtomicUsize::new(0);
+
+/// Keeps a process-wide auth-home switch from racing an already running turn.
+#[derive(Debug)]
+pub(crate) struct AccountRotationTurnGuard;
+
+impl Drop for AccountRotationTurnGuard {
+    fn drop(&mut self) {
+        ACTIVE_TURNS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+pub(crate) fn begin_rotation_turn() -> AccountRotationTurnGuard {
+    ACTIVE_TURNS.fetch_add(1, Ordering::AcqRel);
+    AccountRotationTurnGuard
+}
 
 fn with_shared<T>(f: impl FnOnce(&mut SharedState) -> T) -> T {
     match SHARED.lock() {
@@ -291,8 +309,12 @@ pub(crate) async fn maybe_rotate(
         return None;
     };
     let accounts_dir = config.accounts_dir.as_path();
-    let cache_for = Duration::from_secs(config.usage_cache_seconds);
     let current_dir = auth_manager.auth_home();
+    // AuthManager owns one process-wide home. Never switch it while another turn is
+    // running; that would change the credentials of an in-flight request.
+    if ACTIVE_TURNS.load(Ordering::Acquire) > 1 {
+        return None;
+    }
     let current_usage = if is_exhausted(&current_dir) {
         None
     } else if let Some(usage) = latest
@@ -306,13 +328,31 @@ pub(crate) async fn maybe_rotate(
     {
         Some(usage)
     } else {
-        cached_usage(auth_manager, &current_dir, chatgpt_base_url, cache_for).await
+        // At a turn boundary the decision must reflect the current quota. A cache
+        // can otherwise keep an account above the reserve after the last request
+        // has crossed it.
+        cached_usage(auth_manager, &current_dir, chatgpt_base_url, Duration::ZERO).await
     };
+    info!(
+        current = %account_name(accounts_dir, &current_dir),
+        current_dir = %current_dir.display(),
+        reserve_percent = config.reserve_percent,
+        latest_snapshot = latest.is_some(),
+        current_remaining = current_usage.as_ref().map(|u| u.weekly_remaining_percent),
+        current_blocked = current_usage.as_ref().map(|u| u.blocked),
+        "account rotation: evaluating current account"
+    );
     let current_usable = !is_exhausted(&current_dir)
         && current_usage
             .as_ref()
             .is_none_or(|usage| usage.is_usable(config.reserve_percent));
     if current_usable {
+        info!(
+            current = %account_name(accounts_dir, &current_dir),
+            remaining = current_usage.as_ref().map(|u| u.weekly_remaining_percent),
+            reserve_percent = config.reserve_percent,
+            "account rotation: keeping current account"
+        );
         return None;
     }
 
@@ -326,16 +366,34 @@ pub(crate) async fn maybe_rotate(
             } else if is_exhausted(&dir) {
                 None
             } else {
-                cached_usage(auth_manager, &dir, chatgpt_base_url, cache_for).await
+                // We are already rotating, so inspect every candidate afresh. The
+                // configured cache is only used by non-boundary background probes.
+                cached_usage(auth_manager, &dir, chatgpt_base_url, Duration::ZERO).await
             };
             AccountCandidate { name, dir, usage }
         }
     }))
     .await;
 
+    for candidate in &candidates {
+        info!(
+            account = %candidate.name,
+            remaining = candidate.usage.as_ref().map(|u| u.weekly_remaining_percent),
+            blocked = candidate.usage.as_ref().map(|u| u.blocked),
+            resets_at = candidate.usage.as_ref().and_then(|u| u.weekly_resets_at),
+            usable = candidate.usage.as_ref().is_some_and(|u| u.is_usable(config.reserve_percent)),
+            reserve_percent = config.reserve_percent,
+            "account rotation: candidate"
+        );
+    }
+
     let Some(selected) = select_account(&candidates, Some(&current_dir), config.reserve_percent)
     else {
-        info!("account rotation: no usable account; keeping the current account");
+        info!(
+            current = %account_name(accounts_dir, &current_dir),
+            reserve_percent = config.reserve_percent,
+            "account rotation: no usable account; keeping the current account"
+        );
         return None;
     };
     if same_dir(&selected.dir, &current_dir) {

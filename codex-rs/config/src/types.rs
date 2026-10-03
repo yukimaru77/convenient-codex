@@ -292,7 +292,7 @@ pub struct ToolSuggestConfig {
 
 pub use codex_protocol::MemoryVersion;
 
-pub const DEFAULT_ACCOUNT_ROTATION_RESERVE_PERCENT: u8 = 10;
+pub const DEFAULT_ACCOUNT_ROTATION_RESERVE_PERCENT: u8 = 20;
 pub const DEFAULT_ACCOUNT_ROTATION_USAGE_CACHE_SECONDS: u64 = 60;
 
 /// Turn-boundary ChatGPT account rotation settings loaded from config.toml.

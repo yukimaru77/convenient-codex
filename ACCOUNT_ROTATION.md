@@ -5,7 +5,7 @@
 ```toml
 [account_rotation]
 accounts_dir = "~/.codex-accounts"   # 必須。これがあると有効になる
-reserve_percent = 10                  # 既定 10。週の残量がこの値以下なら使わない
+reserve_percent = 20                  # 既定 20。週の残量がこの値以下なら使わない
 usage_cache_seconds = 60              # 既定 60。各アカウントの使用量の再取得間隔
 ```
 
@@ -22,3 +22,5 @@ usage_cache_seconds = 60              # 既定 60。各アカウントの使用�
 - 切替後、前のアカウントが発行した暗号化済みの推論・圧縮データを復号できないという応答（`invalid_encrypted_content` など）が返った場合は、その要求に含まれた暗号化項目を除いて 1 回だけ再送し、ログに記録する。同じ会話の以降の要求でも、それらの項目は送らない。使用量上限エラーになったターン自体の自動再実行は行わない。
 
 根拠: [選択ロジック](codex-rs/core/src/account_rotation.rs)、[セッションのフック](codex-rs/core/src/session/account_rotation.rs)、[認証の切替](codex-rs/login/src/auth/manager.rs)（`AuthManager::switch_home`）。
+
+起動時の判定は、プロセス起動後に最初のターンを準備する時点で行う。この判定が TUI と `exec` の起動時判定を兼ねる。

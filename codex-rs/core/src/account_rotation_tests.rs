@@ -125,6 +125,19 @@ fn selection_skips_accounts_at_or_below_reserve_and_unknown_usage() {
 }
 
 #[test]
+fn reserve_99_skips_account_at_99_and_selects_account4() {
+    let candidates = [
+        candidate("account3", usage(99.0, 100)),
+        candidate("account4", usage(100.0, 200)),
+    ];
+    let current = PathBuf::from("/accounts/account3");
+    assert_eq!(
+        select_account(&candidates, Some(&current), 99).map(|c| c.name.as_str()),
+        Some("account4")
+    );
+}
+
+#[test]
 fn selection_keeps_a_usable_current_account() {
     let candidates = [
         candidate("a", usage(80.0, 100)),

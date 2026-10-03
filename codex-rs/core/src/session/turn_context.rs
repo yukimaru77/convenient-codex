@@ -2,6 +2,7 @@ use super::step_settings::ResolvedStepSettings;
 use super::token_budget::has_explicit_settings;
 use super::token_budget::resolve_token_budget;
 use super::*;
+use crate::account_rotation::AccountRotationTurnGuard;
 use crate::config::TokenBudgetConfig;
 use crate::environment_selection::EnvironmentConfigOrigin;
 use crate::environment_selection::TurnEnvironmentSnapshot;
@@ -360,6 +361,8 @@ pub struct TurnContext {
     pub(crate) model_verification_emitted: AtomicBool,
     /// Effective cyber treatment for this turn, including any child-agent inheritance.
     pub(crate) cyber_access_program: Option<CyberAccessProgram>,
+    /// Holds the process-wide auth-home ownership for this turn.
+    pub(crate) account_rotation_guard: Option<AccountRotationTurnGuard>,
 }
 
 /// Selects which preparation is needed when building a turn context.
@@ -724,6 +727,7 @@ impl TurnContext {
                 self.model_verification_emitted.load(Ordering::Relaxed),
             ),
             cyber_access_program: self.cyber_access_program,
+            account_rotation_guard: None,
         }
     }
 
@@ -1039,6 +1043,7 @@ impl Session {
             server_model_warning_emitted: AtomicBool::new(false),
             model_verification_emitted: AtomicBool::new(false),
             cyber_access_program: None,
+            account_rotation_guard: None,
         }
     }
 
@@ -1093,6 +1098,7 @@ impl Session {
         if let Some(service_tier) = service_tier_for_turn {
             Arc::make_mut(&mut configuration.step_settings).service_tier = Some(service_tier);
         }
+        let rotation_guard = crate::account_rotation::begin_rotation_turn();
         Box::pin(self.maybe_rotate_account(&sub_id)).await;
         if !crate::guardian::is_basic_session_source(&configuration.session_source) {
             self.services
@@ -1104,9 +1110,13 @@ impl Session {
                 .await;
         }
         let turn_environments = self.activate_turn_environments(&configuration).await;
-        let turn_context = self
+        let mut turn_context = self
             .new_turn_from_configuration(sub_id, configuration, turn_environments, options)
             .await;
+        // The guard is dropped with the turn context, after all requests and turn-end hooks.
+        Arc::get_mut(&mut turn_context)
+            .expect("new turn context must be uniquely owned")
+            .account_rotation_guard = Some(rotation_guard);
         Ok(Some((turn_context, commit.snapshot)))
     }
 
